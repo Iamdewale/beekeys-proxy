@@ -1,7 +1,7 @@
 {
   "name": "beekeys-proxy",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "serverjs",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js"
