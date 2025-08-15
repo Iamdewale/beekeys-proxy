@@ -32,22 +32,44 @@ app.options("/submit", (req, res) => {
   res.sendStatus(200);
 });
 
-// Existing POST /submit
+// 🔹 Endpoint: POST /submit (Forward to Beekeys)
 app.post("/submit", async (req, res) => {
+  const formData = req.body;
+
+  if (!formData || Object.keys(formData).length === 0) {
+    return res.status(400).json({ error: "No data provided" });
+  }
+
   try {
-    const response = await axios.post(`${WP_API_URL}/posts`, req.body, {
+    const beekeysUrl = "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
+
+    const response = await fetch(beekeysUrl, {
+      method: "POST",
       headers: {
-        Authorization: `Basic ${token}`,
-        "Content-Type": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded", 
+        "Cookie": process.env.BEEKEYS_COOKIE || "", // 🔑 Put this in your Render env vars
+        "User-Agent": "Mozilla/5.0",
       },
+      body: new URLSearchParams(formData).toString(), // convert JSON → form-encoded
     });
 
-    res.json(response.data);
-  } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(error.response?.status || 500).json(
-      error.response?.data || { message: error.message }
-    );
+    const text = await response.text();
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: "Beekeys API request failed", details: text });
+    }
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text }; // fallback if response is HTML/text
+    }
+
+    res.json({ success: true, beekeysResponse: data });
+  } catch (err) {
+    console.error("Error forwarding to Beekeys:", err.message);
+    res.status(500).json({ error: "Failed to submit to Beekeys" });
   }
 });
 
