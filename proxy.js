@@ -23,6 +23,15 @@ const token = Buffer.from(`${WP_USERNAME}:${WP_PASSWORD}`).toString("base64");
 /**
  * Create a new post
  */
+
+// Add this before other routes
+app.options("/submit", (req, res) => {
+  res.header("Access-Control-Allow-Origin", "*"); // Adjust for security
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.sendStatus(200);
+});
+
 // Existing POST /submit
 app.post("/submit", async (req, res) => {
   try {
