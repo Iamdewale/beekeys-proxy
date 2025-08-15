@@ -6,9 +6,10 @@ const fetch = (...args) =>
   import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 const app = express();
-const PORT = 4000;
+const PORT = process.env.PORT || 4000; // use Render's port if available
 
 app.use(cors());
+app.use(express.json()); // Allow parsing JSON POST bodies
 
 // 🔹 Util: slugify fallback
 function slugify(text) {
@@ -24,12 +25,15 @@ function slugify(text) {
 // 🔹 Endpoint: GET /api/regions
 app.get("/api/regions", async (req, res) => {
   try {
-    const apiURL = "https://app.beekeys.com/nigeria/wp-json/geodir/v2/locations/regions";
+    const apiURL =
+      "https://app.beekeys.com/nigeria/wp-json/geodir/v2/locations/regions";
     const response = await fetch(apiURL);
     const text = await response.text();
 
     if (!response.ok) {
-      return res.status(response.status).json({ error: "Beekeys API request failed" });
+      return res
+        .status(response.status)
+        .json({ error: "Beekeys API request failed" });
     }
 
     let data;
@@ -56,7 +60,9 @@ app.get("/api/regions", async (req, res) => {
       }));
     } else {
       console.error("Unexpected structure:", data);
-      return res.status(500).json({ error: "Unexpected response structure from Beekeys" });
+      return res
+        .status(500)
+        .json({ error: "Unexpected response structure from Beekeys" });
     }
 
     res.json({ data: regions });
@@ -85,7 +91,9 @@ app.get("/api/markers/:slug", async (req, res) => {
     const raw = await response.text();
 
     if (!raw || raw.includes("wp-login.php")) {
-      return res.status(401).json({ error: "Session expired. Please update your cookie." });
+      return res
+        .status(401)
+        .json({ error: "Session expired. Please update your cookie." });
     }
 
     let json;
@@ -97,20 +105,42 @@ app.get("/api/markers/:slug", async (req, res) => {
     }
 
     // Format markers
-    const markers = json.items?.map((item) => ({
-      id: item.m,
-      title: item.t,
-      slug: item.s,
-      lat: parseFloat(item.lt),
-      lng: parseFloat(item.ln),
-      icon: json.icons?.[item.i]?.i ?? null,
-    })) || [];
+    const markers =
+      json.items?.map((item) => ({
+        id: item.m,
+        title: item.t,
+        slug: item.s,
+        lat: parseFloat(item.lt),
+        lng: parseFloat(item.ln),
+        icon: json.icons?.[item.i]?.i ?? null,
+      })) || [];
 
     res.json({ data: markers });
   } catch (error) {
     console.error("Error in /api/markers/:slug:", error.message);
     res.status(500).json({ error: "Could not fetch markers" });
   }
+});
+
+// 🔹 Endpoint: POST /submit
+app.post("/submit", (req, res) => {
+  const formData = req.body;
+
+  if (!formData || Object.keys(formData).length === 0) {
+    return res.status(400).json({ error: "No data provided" });
+  }
+
+  console.log("📩 Received form submission:", formData);
+
+  // Here you could:
+  // - Validate the data
+  // - Save it to a database
+  // - Forward it to another API
+
+  res.json({
+    message: "Form submitted successfully!",
+    data: formData,
+  });
 });
 
 // 🔹 Start Server
