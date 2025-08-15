@@ -7,32 +7,25 @@ require("dotenv").config();
 
 const app = express();
 app.use(express.json());
-app.use(cors()); // Allow requests from your React app
+app.use(cors());
 
-// Multer setup for file uploads
+// Multer setup
 const upload = multer({ storage: multer.memoryStorage() });
 
-// WP API credentials from .env
+// WP API credentials
 const WP_USERNAME = process.env.WP_USERNAME;
 const WP_PASSWORD = process.env.WP_PASSWORD;
-const WP_API_URL = process.env.WP_API_URL; // e.g., https://app.beekeys.com/wp-json/wp/v2
+const WP_API_URL = process.env.WP_API_URL;
 
 // Auth token
 const token = Buffer.from(`${WP_USERNAME}:${WP_PASSWORD}`).toString("base64");
 
-/**
- * Create a new post
- */
-
-// Add this before other routes
-app.options("/submit", (req, res) => {
-  res.header("Access-Control-Allow-Origin", "*"); // Adjust for security
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.sendStatus(200);
+// --- Test Route
+app.get("/test", (req, res) => {
+  res.json({ message: "Proxy is working!" });
 });
 
-// 🔹 Endpoint: POST /submit (Forward to Beekeys)
+// --- Submit Route (forward to Beekeys form handler)
 app.post("/submit", async (req, res) => {
   const formData = req.body;
 
@@ -43,44 +36,26 @@ app.post("/submit", async (req, res) => {
   try {
     const beekeysUrl = "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
 
-    const response = await fetch(beekeysUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded", 
-        "Cookie": process.env.BEEKEYS_COOKIE || "", // 🔑 Put this in your Render env vars
-        "User-Agent": "Mozilla/5.0",
-      },
-      body: new URLSearchParams(formData).toString(), // convert JSON → form-encoded
-    });
+    const response = await axios.post(
+      beekeysUrl,
+      new URLSearchParams(formData).toString(),
+      {
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Cookie": process.env.BEEKEYS_COOKIE || "",
+          "User-Agent": "Mozilla/5.0",
+        },
+      }
+    );
 
-    const text = await response.text();
-
-    if (!response.ok) {
-      return res.status(response.status).json({ error: "Beekeys API request failed", details: text });
-    }
-
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = { raw: text }; // fallback if response is HTML/text
-    }
-
-    res.json({ success: true, beekeysResponse: data });
+    res.json({ success: true, beekeysResponse: response.data });
   } catch (err) {
     console.error("Error forwarding to Beekeys:", err.message);
     res.status(500).json({ error: "Failed to submit to Beekeys" });
   }
 });
 
-// NEW — GET for quick browser testing
-app.get("/submit", (req, res) => {
-  res.json({ message: "Submit endpoint is alive — use POST to send data" });
-});
-
-/**
- * Upload media (images/files) to WordPress
- */
+// --- Upload Media Route
 app.post("/upload-media", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
@@ -95,17 +70,13 @@ app.post("/upload-media", upload.single("file"), async (req, res) => {
       },
     });
 
-    res.json(response.data);
+    res.json({ success: true, media: response.data });
   } catch (error) {
     console.error(error.response?.data || error.message);
     res.status(error.response?.status || 500).json(
       error.response?.data || { message: error.message }
     );
   }
-});
-
-app.get("/test", (req, res) => {
-  res.json({ message: "Proxy is working!" });
 });
 
 const PORT = process.env.PORT || 5000;
