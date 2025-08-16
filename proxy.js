@@ -1,4 +1,3 @@
-// server/proxy.js
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
@@ -6,26 +5,42 @@ const multer = require("multer");
 require("dotenv").config();
 
 const app = express();
-app.use(express.json());
-app.use(cors());
 
-// Multer setup
+// Middleware
+app.use(express.json());
+app.use(cors({
+  origin: process.env.REACT_APP_URL || "*", // Restrict to your React app URL
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
+
+// Multer setup for file uploads
 const upload = multer({ storage: multer.memoryStorage() });
 
-// WP API credentials
+// WP API and Beekeys credentials from .env
 const WP_USERNAME = process.env.WP_USERNAME;
 const WP_PASSWORD = process.env.WP_PASSWORD;
-const WP_API_URL = process.env.WP_API_URL;
+const WP_API_URL = process.env.WP_API_URL || "https://app.beekeys.com/wp-json/wp/v2";
+const BEEKEYS_COOKIE = process.env.BEEKEYS_COOKIE || "";
+const REACT_APP_URL = process.env.REACT_APP_URL || "*";
 
-// Auth token
-const token = Buffer.from(`${WP_USERNAME}:${WP_PASSWORD}`).toString("base64");
+// Auth token for WP REST API
+const wpToken = Buffer.from(`${WP_USERNAME}:${WP_PASSWORD}`).toString("base64");
 
 // --- Test Route
 app.get("/test", (req, res) => {
   res.json({ message: "Proxy is working!" });
 });
 
-// --- Submit Route (forward to Beekeys form handler)
+// --- OPTIONS Handler for CORS
+app.options("/submit", (req, res) => {
+  res.header("Access-Control-Allow-Origin", REACT_APP_URL);
+  res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.sendStatus(200);
+});
+
+// --- Submit Route (forward to Beekeys admin-ajax.php)
 app.post("/submit", async (req, res) => {
   const formData = req.body;
 
@@ -35,27 +50,46 @@ app.post("/submit", async (req, res) => {
 
   try {
     const beekeysUrl = "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
+    const params = new URLSearchParams();
 
-    const response = await axios.post(
-      beekeysUrl,
-      new URLSearchParams(formData).toString(),
-      {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "Cookie": process.env.BEEKEYS_COOKIE || "",
-          "User-Agent": "Mozilla/5.0",
-        },
+    // Flatten nested meta into URLSearchParams
+    Object.entries(formData).forEach(([key, value]) => {
+      if (typeof value === "object" && value !== null) {
+        Object.entries(value).forEach(([metaKey, metaValue]) => {
+          params.append(`meta[${metaKey}]`, metaValue);
+        });
+      } else {
+        params.append(key, value);
       }
-    );
+    });
+
+    const response = await axios.post(beekeysUrl, params.toString(), {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": BEEKEYS_COOKIE,
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+
+    if (response.status !== 200) {
+      throw new Error(`Unexpected status: ${response.status}`);
+    }
 
     res.json({ success: true, beekeysResponse: response.data });
-  } catch (err) {
-    console.error("Error forwarding to Beekeys:", err.message);
-    res.status(500).json({ error: "Failed to submit to Beekeys" });
+  } catch (error) {
+    console.error("Error forwarding to Beekeys:", {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+    });
+    res.status(error.response?.status || 500).json({
+      error: "Failed to submit to Beekeys",
+      details: error.message,
+    });
   }
 });
 
-// --- Upload Media Route
+// --- Upload Media Route (WP REST API)
 app.post("/upload-media", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
@@ -64,7 +98,7 @@ app.post("/upload-media", upload.single("file"), async (req, res) => {
 
     const response = await axios.post(`${WP_API_URL}/media`, req.file.buffer, {
       headers: {
-        Authorization: `Basic ${token}`,
+        Authorization: `Basic ${wpToken}`,
         "Content-Disposition": `attachment; filename="${req.file.originalname}"`,
         "Content-Type": req.file.mimetype,
       },
@@ -72,10 +106,15 @@ app.post("/upload-media", upload.single("file"), async (req, res) => {
 
     res.json({ success: true, media: response.data });
   } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(error.response?.status || 500).json(
-      error.response?.data || { message: error.message }
-    );
+    console.error("Media upload failed:", {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+    });
+    res.status(error.response?.status || 500).json({
+      error: "Failed to upload media",
+      details: error.message,
+    });
   }
 });
 
