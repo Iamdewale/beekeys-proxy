@@ -50,9 +50,8 @@ app.post("/submit", async (req, res) => {
 
   try {
     const beekeysUrl = "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ action: "submit_form" }); // Add action
 
-    // Flatten nested meta into URLSearchParams
     Object.entries(formData).forEach(([key, value]) => {
       if (typeof value === "object" && value !== null) {
         Object.entries(value).forEach(([metaKey, metaValue]) => {
