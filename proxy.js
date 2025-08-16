@@ -9,7 +9,7 @@ const app = express();
 // Middleware
 app.use(express.json());
 app.use(cors({
-  origin: process.env.REACT_APP_URL || "*", // Restrict to your React app URL
+  origin: process.env.REACT_APP_URL || "*", // TODO: restrict to your frontend URL
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
@@ -17,22 +17,29 @@ app.use(cors({
 // Multer setup for file uploads
 const upload = multer({ storage: multer.memoryStorage() });
 
-// WP API and Beekeys credentials from .env
-const WP_USERNAME = process.env.WP_USERNAME;
-const WP_PASSWORD = process.env.WP_PASSWORD;
-const WP_API_URL = process.env.WP_API_URL || "https://app.beekeys.com/wp-json/wp/v2";
-const BEEKEYS_COOKIE = process.env.BEEKEYS_COOKIE || "";
-const REACT_APP_URL = process.env.REACT_APP_URL || "*";
+// 🔑 Env vars
+const {
+  WP_USERNAME,
+  WP_PASSWORD,
+  WP_API_URL = "https://app.beekeys.com/wp-json/wp/v2",
+  BEEKEYS_COOKIE = "",
+  REACT_APP_URL = "*",
+} = process.env;
 
-// Auth token for WP REST API
+// WP Basic Auth token
 const wpToken = Buffer.from(`${WP_USERNAME}:${WP_PASSWORD}`).toString("base64");
 
-// --- Test Route
+
+// -------------------------
+// Routes
+// -------------------------
+
+// Health check
 app.get("/test", (req, res) => {
   res.json({ message: "Proxy is working!" });
 });
 
-// --- OPTIONS Handler for CORS
+// Preflight (CORS) for /submit
 app.options("/submit", (req, res) => {
   res.header("Access-Control-Allow-Origin", REACT_APP_URL);
   res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -40,7 +47,9 @@ app.options("/submit", (req, res) => {
   res.sendStatus(200);
 });
 
-// --- Submit Route (forward to Beekeys admin-ajax.php)
+/**
+ * 🔹 Submit Route → forwards data to Beekeys admin-ajax.php
+ */
 app.post("/submit", async (req, res) => {
   const formData = req.body;
 
@@ -48,12 +57,13 @@ app.post("/submit", async (req, res) => {
     return res.status(400).json({ error: "No data provided" });
   }
 
-  console.log("Received form submission:", formData); // Already present
+  console.log("📨 Received submission:", formData);
 
   try {
     const beekeysUrl = "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
     const params = new URLSearchParams({ action: "submit_form" });
 
+    // Flatten data into WP-style params
     Object.entries(formData).forEach(([key, value]) => {
       if (typeof value === "object" && value !== null) {
         Object.entries(value).forEach(([metaKey, metaValue]) => {
@@ -67,24 +77,17 @@ app.post("/submit", async (req, res) => {
     const response = await axios.post(beekeysUrl, params.toString(), {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": BEEKEYS_COOKIE,
+        "Cookie": BEEKEYS_COOKIE, // 🔑 must be set in Render env vars
         "User-Agent": "Mozilla/5.0",
       },
-      timeout: 10000, // Add timeout to catch slow responses
+      timeout: 10000,
     });
 
-    console.log("Beekeys response:", {
-      status: response.status,
-      data: response.data,
-    });
-
-    if (response.status !== 200) {
-      throw new Error(`Unexpected status: ${response.status}`);
-    }
+    console.log("✅ Beekeys response:", response.status, response.data);
 
     res.json({ success: true, beekeysResponse: response.data });
   } catch (error) {
-    console.error("Error forwarding to Beekeys:", {
+    console.error("❌ Error forwarding to Beekeys:", {
       message: error.message,
       status: error.response?.status,
       data: error.response?.data,
@@ -96,7 +99,9 @@ app.post("/submit", async (req, res) => {
   }
 });
 
-// --- Upload Media Route (WP REST API)
+/**
+ * 🔹 Upload Media → forwards to WP REST API /media
+ */
 app.post("/upload-media", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
@@ -111,9 +116,11 @@ app.post("/upload-media", upload.single("file"), async (req, res) => {
       },
     });
 
+    console.log("📤 Media uploaded:", response.data.id);
+
     res.json({ success: true, media: response.data });
   } catch (error) {
-    console.error("Media upload failed:", {
+    console.error("❌ Media upload failed:", {
       message: error.message,
       status: error.response?.status,
       data: error.response?.data,
@@ -125,5 +132,8 @@ app.post("/upload-media", upload.single("file"), async (req, res) => {
   }
 });
 
+// -------------------------
+// Start server
+// -------------------------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Proxy server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Proxy running on port ${PORT}`));
