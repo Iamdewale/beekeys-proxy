@@ -48,9 +48,11 @@ app.post("/submit", async (req, res) => {
     return res.status(400).json({ error: "No data provided" });
   }
 
+  console.log("Received form submission:", formData); // Already present
+
   try {
     const beekeysUrl = "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
-    const params = new URLSearchParams({ action: "submit_form" }); // Add action
+    const params = new URLSearchParams({ action: "submit_form" });
 
     Object.entries(formData).forEach(([key, value]) => {
       if (typeof value === "object" && value !== null) {
@@ -68,6 +70,12 @@ app.post("/submit", async (req, res) => {
         "Cookie": BEEKEYS_COOKIE,
         "User-Agent": "Mozilla/5.0",
       },
+      timeout: 10000, // Add timeout to catch slow responses
+    });
+
+    console.log("Beekeys response:", {
+      status: response.status,
+      data: response.data,
     });
 
     if (response.status !== 200) {
