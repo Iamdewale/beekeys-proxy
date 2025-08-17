@@ -1,25 +1,22 @@
 const express = require("express");
 const cors = require("cors");
-const multer = require("multer");
-const axios = require("axios");
-const FormData = require("form-data");
-require("dotenv").config();
 
 // For Node 18 and below
 const fetch = (...args) =>
   import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 5000;
 
-app.use(cors({ origin: process.env.REACT_APP_URL || "*" }));
+app.use(cors({
+  origin: process.env.REACT_APP_URL || "https://beekeys-home.vercel.app",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
+
 app.use(express.json());
 
-const upload = multer({ storage: multer.memoryStorage() });
-const BEEKEYS_URL = "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
-
-// ---------------------------------
-// Utils
+// 🔹 Util: slugify fallback
 function slugify(text) {
   return text
     .toString()
@@ -30,40 +27,21 @@ function slugify(text) {
     .replace(/\-\-+/g, "-");
 }
 
-async function getNonce(formId = "8") {
-  try {
-    const res = await axios.get(
-      `${BEEKEYS_URL}?action=nf_get_form&form_id=${formId}`,
-      { headers: { "User-Agent": "Mozilla/5.0" } }
-    );
-    const nonce = res.data?.settings?.key || res.data?.settings?.nonce;
-    if (!nonce) throw new Error("Nonce not found in form data");
-    return nonce;
-  } catch (err) {
-    console.error("Error fetching nonce:", err.response?.data || err.message);
-    throw new Error("Could not fetch Ninja Forms nonce");
-  }
-}
-
-// ---------------------------------
-// API routes
+// 🔹 GET /api/regions
 app.get("/api/regions", async (req, res) => {
   try {
-    const apiURL =
-      "https://app.beekeys.com/nigeria/wp-json/geodir/v2/locations/regions";
+    const apiURL = "https://app.beekeys.com/nigeria/wp-json/geodir/v2/locations/regions";
     const response = await fetch(apiURL);
     const text = await response.text();
 
     if (!response.ok) {
-      return res
-        .status(response.status)
-        .json({ error: "Beekeys API request failed" });
+      return res.status(response.status).json({ error: "Beekeys API request failed" });
     }
 
     let data;
     try {
       data = JSON.parse(text);
-    } catch (err) {
+    } catch {
       return res.status(500).json({ error: "Invalid JSON from Beekeys" });
     }
 
@@ -81,18 +59,17 @@ app.get("/api/regions", async (req, res) => {
         slug: item.slug || item.s || slugify(item.title || item.t),
       }));
     } else {
-      return res
-        .status(500)
-        .json({ error: "Unexpected response structure from Beekeys" });
+      return res.status(500).json({ error: "Unexpected response structure from Beekeys" });
     }
 
-    res.json({ data: regions });
+    res.json({ success: true, data: regions });
   } catch (error) {
     console.error("Error in /api/regions:", error.message);
-    res.status(500).json({ error: "Could not fetch regions" });
+    res.status(500).json({ success: false, error: "Could not fetch regions" });
   }
 });
 
+// 🔹 GET /api/markers/:slug
 app.get("/api/markers/:slug", async (req, res) => {
   const slug = req.params.slug;
   const url = `https://app.beekeys.com/nigeria/wp-json/geodir/v2/markers/?gd-ajax=1&post_type=gd_ems&country=nigeria&region=${slug}&term[]=7&term[]=8&term[]=6&term[]=9`;
@@ -109,18 +86,15 @@ app.get("/api/markers/:slug", async (req, res) => {
     });
 
     const raw = await response.text();
-
     if (!raw || raw.includes("wp-login.php")) {
-      return res
-        .status(401)
-        .json({ error: "Session expired. Please update your cookie." });
+      return res.status(401).json({ success: false, error: "Session expired. Please update your cookie." });
     }
 
     let json;
     try {
       json = JSON.parse(raw);
-    } catch (err) {
-      return res.status(500).json({ error: "Invalid JSON structure" });
+    } catch {
+      return res.status(500).json({ success: false, error: "Invalid JSON structure" });
     }
 
     const markers =
@@ -133,83 +107,24 @@ app.get("/api/markers/:slug", async (req, res) => {
         icon: json.icons?.[item.i]?.i ?? null,
       })) || [];
 
-    res.json({ data: markers });
+    res.json({ success: true, data: markers });
   } catch (error) {
-    res.status(500).json({ error: "Could not fetch markers" });
+    console.error("Error in /api/markers/:slug:", error.message);
+    res.status(500).json({ success: false, error: "Could not fetch markers" });
   }
 });
 
-// ---------------------------------
-// Basic form submit
+// 🔹 POST /submit (local test endpoint)
 app.post("/submit", (req, res) => {
   const formData = req.body;
   if (!formData || Object.keys(formData).length === 0) {
-    return res.status(400).json({ error: "No data provided" });
+    return res.status(400).json({ success: false, error: "No data provided" });
   }
   console.log("📩 Received form submission:", formData);
-  res.json({ message: "Form submitted successfully!", data: formData });
+  res.json({ success: true, message: "Form submitted successfully!", data: formData });
 });
 
-// ---------------------------------
-// Ninja Forms submission
-app.post("/submit-ninja", async (req, res) => {
-  try {
-    const { formData } = req.body;
-    if (!formData) {
-      return res.status(400).json({ success: false, error: "Missing formData" });
-    }
-
-    const nonce = await getNonce(formData.id || "8");
-
-    const params = new URLSearchParams();
-    params.append("action", "nf_ajax_submit");
-    params.append("security", nonce);
-    params.append("formData", JSON.stringify(formData));
-
-    const response = await axios.post(BEEKEYS_URL, params.toString(), {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    });
-
-    res.json({ success: true, wpResponse: response.data });
-  } catch (err) {
-    res.status(err.response?.status || 500).json({
-      success: false,
-      error: "Form submission failed",
-      details: err.response?.data || err.message,
-    });
-  }
+// Start server
+app.listen(PORT, () => {
+  console.log(`✅ Proxy API running on port ${PORT}`);
 });
-
-// ---------------------------------
-// Ninja Forms file upload
-app.post("/upload-ninja", upload.single("file"), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, error: "No file uploaded" });
-    }
-
-    const form = new FormData();
-    form.append("action", "nf_fu_upload");
-    form.append("form_id", "8");
-    form.append("field_id", "164");
-    form.append("file", req.file.buffer, req.file.originalname);
-
-    const response = await axios.post(BEEKEYS_URL, form, {
-      headers: form.getHeaders(),
-    });
-
-    res.json({ success: true, wpResponse: response.data });
-  } catch (err) {
-    res.status(err.response?.status || 500).json({
-      success: false,
-      error: "File upload failed",
-      details: err.response?.data || err.message,
-    });
-  }
-});
-
-// ---------------------------------
-// Start
-app.listen(PORT, () =>
-  console.log(`✅ Proxy API running at http://localhost:${PORT}`)
-);
