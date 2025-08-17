@@ -6,24 +6,15 @@ const FormData = require("form-data");
 require("dotenv").config();
 
 const app = express();
-
-// -------------------------
-// Middleware
-// -------------------------
 app.use(express.json());
-app.use(
-  cors({
-    origin: process.env.REACT_APP_URL || "http://localhost:3000",
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+app.use(cors({
+  origin: process.env.REACT_APP_URL || "http://localhost:3000",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// -------------------------
-// Env Vars
-// -------------------------
 const {
   WP_USERNAME,
   WP_PASSWORD,
@@ -34,14 +25,8 @@ const {
 
 const wpToken = Buffer.from(`${WP_USERNAME}:${WP_PASSWORD}`).toString("base64");
 
-// -------------------------
-// Routes
-// -------------------------
-
 // Health check
-app.get("/test", (req, res) => {
-  res.json({ message: "✅ Proxy is working!" });
-});
+app.get("/test", (_, res) => res.json({ message: "✅ Proxy is working!" }));
 
 // Handle CORS preflight
 app.options("*", (req, res) => {
@@ -51,21 +36,15 @@ app.options("*", (req, res) => {
   res.sendStatus(200);
 });
 
-/**
- * 🔹 Submit Listing → forwards data to Beekeys admin-ajax.php
- */
+// 🔹 Submit Listing
 app.post("/submit", async (req, res) => {
   const formData = req.body;
-
-  if (!formData) {
-    return res.status(400).json({ error: "No data provided" });
-  }
+  if (!formData) return res.status(400).json({ error: "No data provided" });
 
   try {
-    const beekeysUrl =
-      "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
-
+    const beekeysUrl = "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
     const form = new FormData();
+
     form.append("action", "geodir_add_listing");
     form.append("post_title", formData.title || "");
     form.append("post_content", formData.content || "");
@@ -75,26 +54,18 @@ app.post("/submit", async (req, res) => {
     form.append("slogan", formData.meta?.slogan || "");
     form.append("address", formData.meta?.address || "");
 
-    // attach media IDs if any
+    // 🔹 Append media IDs properly
     if (formData.meta?.mediaIds?.length > 0) {
-      form.append("mediaIds", JSON.stringify(formData.meta.mediaIds));
+      formData.meta.mediaIds.forEach(id => form.append("mediaIds[]", id));
     }
 
     const response = await axios.post(beekeysUrl, form, {
-      headers: {
-        ...form.getHeaders(),
-        Cookie: BEEKEYS_COOKIE,
-      },
+      headers: { ...form.getHeaders(), Cookie: BEEKEYS_COOKIE },
     });
 
     res.json({ success: true, beekeysResponse: response.data });
   } catch (err) {
-    console.error("❌ Error in /submit:", {
-      message: err.message,
-      status: err.response?.status,
-      data: err.response?.data,
-    });
-
+    console.error("❌ Error in /submit:", err.response?.data || err.message);
     res.status(err.response?.status || 500).json({
       success: false,
       error: "Beekeys submission failed",
@@ -103,33 +74,24 @@ app.post("/submit", async (req, res) => {
   }
 });
 
-/**
- * 🔹 Upload Media → forwards files to WP REST API /media
- */
+// 🔹 Upload Media
 app.post("/upload-media", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: "No file uploaded" });
-    }
+    if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
 
-    const response = await axios.post(`${WP_API_URL}/media`, req.file.buffer, {
-      headers: {
-        Authorization: `Basic ${wpToken}`,
-        "Content-Disposition": `attachment; filename="${req.file.originalname}"`,
-        "Content-Type": req.file.mimetype,
-      },
+    const form = new FormData();
+    form.append("file", req.file.buffer, {
+      filename: req.file.originalname,
+      contentType: req.file.mimetype,
     });
 
-    console.log("📤 Media uploaded:", response.data.id);
+    const response = await axios.post(`${WP_API_URL}/media`, form, {
+      headers: { Authorization: `Basic ${wpToken}`, ...form.getHeaders() },
+    });
 
     res.json({ success: true, media: response.data });
   } catch (error) {
-    console.error("❌ Media upload failed:", {
-      message: error.message,
-      status: error.response?.status,
-      data: error.response?.data,
-    });
-
+    console.error("❌ Media upload failed:", error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
       success: false,
       error: "Failed to upload media",
@@ -138,8 +100,6 @@ app.post("/upload-media", upload.single("file"), async (req, res) => {
   }
 });
 
-// -------------------------
 // Start server
-// -------------------------
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Proxy running on port ${PORT}`));
