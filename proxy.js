@@ -36,43 +36,35 @@ app.options("*", (req, res) => {
   res.sendStatus(200);
 });
 
-// 🔹 Submit Listing
+// --- Submit Route (forward to Beekeys admin-ajax.php)
 app.post("/submit", async (req, res) => {
-  const formData = req.body;
-  if (!formData) return res.status(400).json({ error: "No data provided" });
-
   try {
     const beekeysUrl = "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
-    const form = new FormData();
 
-    form.append("action", "geodir_add_listing");
-    form.append("post_title", formData.title || "");
-    form.append("post_content", formData.content || "");
-    form.append("phone", formData.meta?.phone || "");
-    form.append("email", formData.meta?.email || "");
-    form.append("tags", formData.meta?.tags || "");
-    form.append("slogan", formData.meta?.slogan || "");
-    form.append("address", formData.meta?.address || "");
-
-    // 🔹 Append media IDs properly
-    if (formData.meta?.mediaIds?.length > 0) {
-      formData.meta.mediaIds.forEach(id => form.append("mediaIds[]", id));
-    }
-
-    const response = await axios.post(beekeysUrl, form, {
-      headers: { ...form.getHeaders(), Cookie: BEEKEYS_COOKIE },
+    // Convert incoming JSON to form-urlencoded
+    const params = new URLSearchParams();
+    Object.entries(req.body).forEach(([key, value]) => {
+      params.append(key, value);
     });
 
-    res.json({ success: true, beekeysResponse: response.data });
-  } catch (err) {
-    console.error("❌ Error in /submit:", err.response?.data || err.message);
-    res.status(err.response?.status || 500).json({
-      success: false,
-      error: "Beekeys submission failed",
-      details: err.response?.data || err.message,
+    const response = await axios.post(beekeysUrl, params.toString(), {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": BEEKEYS_COOKIE, // your auth session cookie
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error("Error forwarding to Beekeys:", error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: "Failed to submit to Beekeys",
+      details: error.response?.data || error.message,
     });
   }
 });
+
 
 // 🔹 Upload Media
 app.post("/upload-media", upload.single("file"), async (req, res) => {
