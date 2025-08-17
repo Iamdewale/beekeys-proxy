@@ -5,93 +5,100 @@ const multer = require("multer");
 const FormData = require("form-data");
 require("dotenv").config();
 
+const fieldMap = require("./fieldMap");
+
 const app = express();
 app.use(express.json());
-app.use(cors({
-  origin: process.env.REACT_APP_URL || "http://localhost:3000",
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-}));
+app.use(cors({ origin: process.env.REACT_APP_URL || "*" }));
 
 const upload = multer({ storage: multer.memoryStorage() });
+const BEEKEYS_URL = "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
+const FORM_ID = "8"; // Ninja Form ID
 
-const {
-  WP_USERNAME,
-  WP_PASSWORD,
-  WP_API_URL = "https://app.beekeys.com/wp-json/wp/v2",
-  BEEKEYS_COOKIE = "",
-  REACT_APP_URL = "http://localhost:3000",
-} = process.env;
+// --- Helper: Fetch nonce
+async function getNonce(formId = FORM_ID) {
+  const res = await axios.get(`${BEEKEYS_URL}?action=nf_get_form&form_id=${formId}`);
+  const nonce = res.data?.settings?.key || res.data?.settings?.nonce;
+  if (!nonce) throw new Error("Nonce not found in form data");
+  return nonce;
+}
 
-const wpToken = Buffer.from(`${WP_USERNAME}:${WP_PASSWORD}`).toString("base64");
+// --- Helper: Build Ninja Form payload
+function buildFormData(userData) {
+  const fields = {};
 
-// Health check
-app.get("/test", (_, res) => res.json({ message: "✅ Proxy is working!" }));
+  Object.entries(fieldMap).forEach(([key, fieldId]) => {
+    if (userData[key] !== undefined && userData[key] !== null) {
+      fields[fieldId] = { id: fieldId, value: userData[key] };
+    }
+  });
 
-// Handle CORS preflight
-app.options("*", (req, res) => {
-  res.header("Access-Control-Allow-Origin", REACT_APP_URL);
-  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
-  res.sendStatus(200);
-});
+  return {
+    id: FORM_ID,
+    fields,
+    settings: {},
+    extra: {},
+  };
+}
 
-// --- Submit Route (forward to Beekeys admin-ajax.php)
-app.post("/submit", async (req, res) => {
+// --- Route: Submit Form
+app.post("/submit-ninja", async (req, res) => {
   try {
-    const beekeysUrl = "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
+    const userData = req.body;
+    if (!userData) return res.status(400).json({ error: "Missing form data" });
 
-    // Convert incoming JSON to form-urlencoded
+    const nonce = await getNonce(FORM_ID);
+    const formData = buildFormData(userData);
+
     const params = new URLSearchParams();
-    Object.entries(req.body).forEach(([key, value]) => {
-      params.append(key, value);
+    params.append("action", "nf_ajax_submit");
+    params.append("security", nonce);
+    params.append("formData", JSON.stringify(formData));
+
+    const response = await axios.post(BEEKEYS_URL, params.toString(), {
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
 
-    const response = await axios.post(beekeysUrl, params.toString(), {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": BEEKEYS_COOKIE, // your auth session cookie
-        "User-Agent": "Mozilla/5.0",
-      },
-    });
-
-    res.json(response.data);
-  } catch (error) {
-    console.error("Error forwarding to Beekeys:", error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: "Failed to submit to Beekeys",
-      details: error.response?.data || error.message,
+    res.json({ success: true, data: response.data });
+  } catch (err) {
+    console.error("Form submission error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({
+      error: "Form submission failed",
+      details: err.response?.data || err.message,
     });
   }
 });
 
-
-// 🔹 Upload Media
-app.post("/upload-media", upload.single("file"), async (req, res) => {
+// --- Route: Upload File
+app.post("/upload-ninja", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
     const form = new FormData();
-    form.append("file", req.file.buffer, {
-      filename: req.file.originalname,
-      contentType: req.file.mimetype,
+    form.append("action", "nf_fu_upload");
+    form.append("form_id", FORM_ID);
+    form.append("field_id", fieldMap.imageUpload);
+    form.append("file", req.file.buffer, req.file.originalname);
+
+    const response = await axios.post(BEEKEYS_URL, form, {
+      headers: form.getHeaders(),
     });
 
-    const response = await axios.post(`${WP_API_URL}/media`, form, {
-      headers: { Authorization: `Basic ${wpToken}`, ...form.getHeaders() },
-    });
-
-    res.json({ success: true, media: response.data });
-  } catch (error) {
-    console.error("❌ Media upload failed:", error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      success: false,
-      error: "Failed to upload media",
-      details: error.response?.data || error.message,
+    // Response includes tmp_name — return so frontend can attach
+    res.json({ success: true, file: response.data });
+  } catch (err) {
+    console.error("Upload error:", err.response?.data || err.message);
+    res.status(err.response?.status || 500).json({
+      error: "File upload failed",
+      details: err.response?.data || err.message,
     });
   }
 });
 
-// Start server
+// --- Health check
+app.get("/test", (req, res) => {
+  res.json({ message: "Proxy running and ready" });
+});
+
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Proxy running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Proxy running on port ${PORT}`));
