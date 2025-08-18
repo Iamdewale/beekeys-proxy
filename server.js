@@ -65,17 +65,18 @@ app.get("/api/state-details/:slug", async (req, res) => {
   const { slug } = req.params;
 
   try {
-    // 1️⃣ Try to fetch region meta (optional, may fail)
     let region = null;
+
+    // Try region meta (optional)
     try {
       const regionURL = `https://app.beekeys.com/nigeria/wp-json/geodir/v2/locations/region/${slug}`;
       const regionRes = await axios.get(regionURL);
       region = regionRes.data;
-    } catch (err) {
-      console.warn(`⚠️ No region details for ${slug}, skipping…`);
+    } catch {
+      // just quietly skip
     }
 
-    // 2️⃣ Always fetch markers (businesses)
+    // Always fetch markers
     const markersURL = `https://app.beekeys.com/nigeria/wp-json/geodir/v2/markers/?gd-ajax=1&post_type=gd_ems&country=nigeria&region=${slug}`;
     const markersRes = await axios.get(markersURL);
 
@@ -86,18 +87,13 @@ app.get("/api/state-details/:slug", async (req, res) => {
       markers = markersRes.data.data;
     }
 
-    // ✅ Normalized response
-    res.json({
-      success: true,
-      slug,
-      region,   // may be null
-      markers,  // always array
-    });
+    res.json({ success: true, slug, region, markers });
   } catch (err) {
     console.error("❌ State details error:", err.message);
     res.status(500).json({ success: false, error: "Failed to fetch state details" });
   }
 });
+
 
 
 app.listen(PORT, () =>
