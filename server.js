@@ -80,35 +80,45 @@ app.get("/api/state-details/:slug", async (req, res) => {
 
 // 🔹 Combined state details (region + markers)
 app.get("/api/state-details/:slug", async (req, res) => {
-  const { slug } = req.params;
+  const slug = req.params.slug;
 
   try {
-    let region = null;
+    // 1️⃣ Get region info from WP
+    const regionsURL =
+      "https://app.beekeys.com/nigeria/wp-json/geodir/v2/locations/regions";
+    const regionsRes = await axios.get(regionsURL);
+    const regions = Array.isArray(regionsRes.data) ? regionsRes.data : [];
 
-    // Try region meta (optional)
-    try {
-      const regionURL = `https://app.beekeys.com/nigeria/wp-json/geodir/v2/locations/region/${slug}`;
-      const regionRes = await axios.get(regionURL);
-      region = regionRes.data;
-    } catch {
-      // just quietly skip
+    // Find the region by slug
+    const region = regions.find((r) => r.slug === slug) || null;
+    if (!region) {
+      console.warn(`⚠️ No region details for ${slug}, skipping…`);
     }
 
-    // Always fetch markers
+    // 2️⃣ Get markers (business listings) for this region
     const markersURL = `https://app.beekeys.com/nigeria/wp-json/geodir/v2/markers/?gd-ajax=1&post_type=gd_ems&country=nigeria&region=${slug}`;
-    const markersRes = await axios.get(markersURL);
-
     let markers = [];
-    if (Array.isArray(markersRes.data)) {
-      markers = markersRes.data;
-    } else if (Array.isArray(markersRes.data?.data)) {
-      markers = markersRes.data.data;
+    try {
+      const markersRes = await axios.get(markersURL);
+      markers = Array.isArray(markersRes.data) ? markersRes.data : [];
+    } catch (err) {
+      console.warn(`⚠️ Failed to fetch markers for ${slug}:`, err.message);
     }
 
-    res.json({ success: true, slug, region, markers });
+    // ✅ Always respond in the same shape
+    res.json({
+      success: true,
+      region,   // { id, name, slug, ... } or null
+      markers,  // [] if none found
+    });
   } catch (err) {
     console.error("❌ State details error:", err.message);
-    res.status(500).json({ success: false, error: "Failed to fetch state details" });
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch state details",
+      region: null,
+      markers: [],
+    });
   }
 });
 
