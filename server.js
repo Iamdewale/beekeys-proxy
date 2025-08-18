@@ -80,25 +80,53 @@ app.get("/api/state-details/:slug", async (req, res) => {
   const { slug } = req.params;
 
   try {
+    // 1. Resolve the region
     const region = await resolveRegion(slug);
-    const regionSlug = region?.slug || slug;
+    if (!region) {
+      return res.status(404).json({
+        success: false,
+        error: `Region not found for slug: ${slug}`,
+        region: null,
+        markers: []
+      });
+    }
 
-    const markers = await fetchJSON(
+    // 2. Make sure we use the correct WP/GeoDir slug
+    const regionSlug = (region.slug || slug).replace(/-state$/, "");
+
+    // 3. Fetch markers from Beekeys WP API
+    const rawMarkers = await fetchJSON(
       `${BEEKEYS_BASE}/geodir/v2/markers/?gd-ajax=1&post_type=gd_ems&country=nigeria&region=${regionSlug}`,
       []
     );
 
-    res.json({ success: true, region, markers });
+    // 4. Normalize marker shape
+    const markers = rawMarkers.map(m => ({
+      id: m.id,
+      title: m.title?.rendered || m.title || "Untitled",
+      lat: parseFloat(m.lat || m.latitude || 0),
+      lng: parseFloat(m.lng || m.longitude || 0),
+      icon: m.icon || null
+    })).filter(m => m.lat && m.lng); // drop invalid coords
+
+    // 5. Return to frontend
+    res.json({
+      success: true,
+      region,
+      markers
+    });
+
   } catch (err) {
     console.error("❌ State details error:", err.message);
     res.status(500).json({
       success: false,
       error: "Failed to fetch state details",
       region: null,
-      markers: [],
+      markers: []
     });
   }
 });
+
 
 // 🔎 Search businesses
 app.get("/api/businesses", async (req, res) => {
