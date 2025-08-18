@@ -68,6 +68,30 @@ app.get("/api/markers/:slug", async (req, res) => {
   }
 });
 
+// 🔹 Debug endpoint (raw response from WP for troubleshooting)
+app.get("/debug-form/:formId", async (req, res) => {
+  try {
+    const { formId } = req.params;
+    const response = await axios.get(
+      `${BEEKEYS_URL}?action=nf_get_form&form_id=${formId}`,
+      { headers: { "User-Agent": "Mozilla/5.0" } }
+    );
+
+    res.json({
+      success: true,
+      formId,
+      raw: response.data, // dump full response
+    });
+  } catch (err) {
+    console.error("❌ Debug error:", err.response?.data || err.message);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      raw: err.response?.data,
+    });
+  }
+});
+
 // 🔹 Get cleaned Ninja Form fields
 app.get("/form-fields/:formId", async (req, res) => {
   try {
@@ -78,9 +102,11 @@ app.get("/form-fields/:formId", async (req, res) => {
     );
 
     const form = response.data;
+    console.log("📝 Raw form response:", JSON.stringify(form, null, 2));
 
-    // Some sites put fields in different locations
-    const rawFields = form?.fields || form?.formData?.fields || [];
+    // Try different nesting structures
+    const rawFields =
+      form?.fields || form?.formData?.fields || form?.settings?.formContent || [];
 
     if (!rawFields.length) {
       return res.status(404).json({
@@ -90,7 +116,7 @@ app.get("/form-fields/:formId", async (req, res) => {
       });
     }
 
-    // Build a clean lowercase key -> id map
+    // Build clean lowercase key -> id map
     const fieldMap = {};
     rawFields.forEach((f) => {
       if (f?.id && f?.key) {
@@ -103,7 +129,7 @@ app.get("/form-fields/:formId", async (req, res) => {
 
     res.json({ success: true, formId, fieldMap });
   } catch (err) {
-    console.error("❌ Form fields error:", err.message);
+    console.error("❌ Form fields error:", err.response?.data || err.message);
     res.status(500).json({ success: false, error: "Failed to fetch form fields" });
   }
 });
@@ -129,7 +155,7 @@ app.post("/submit-ninja", async (req, res) => {
 
     res.json({ success: true, wpResponse: response.data });
   } catch (err) {
-    console.error("❌ Submit error:", err.message);
+    console.error("❌ Submit error:", err.response?.data || err.message);
     res.status(500).json({ success: false, error: "Form submission failed" });
   }
 });
@@ -158,7 +184,7 @@ app.post("/upload-ninja", upload.single("file"), async (req, res) => {
 
     res.json({ success: true, wpResponse: response.data });
   } catch (err) {
-    console.error("❌ Upload error:", err.message);
+    console.error("❌ Upload error:", err.response?.data || err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -167,3 +193,4 @@ app.post("/upload-ninja", upload.single("file"), async (req, res) => {
 app.listen(PORT, () =>
   console.log(`✅ Proxy API running at http://localhost:${PORT}`)
 );
+// ========== END ==========
