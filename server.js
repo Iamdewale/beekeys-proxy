@@ -66,10 +66,12 @@ app.get("/api/regions", async (req, res) => {
     const apiURL =
       "https://app.beekeys.com/nigeria/wp-json/geodir/v2/locations/regions";
     const response = await axios.get(apiURL);
-    res.json(response.data);
+
+    // Always normalize into { data: [...] }
+    res.json({ success: true, data: response.data });
   } catch (err) {
     console.error("❌ Regions error:", err.message);
-    res.status(500).json({ error: "Failed to fetch regions" });
+    res.status(500).json({ success: false, error: "Failed to fetch regions" });
   }
 });
 
@@ -79,12 +81,15 @@ app.get("/api/markers/:slug", async (req, res) => {
   const url = `https://app.beekeys.com/nigeria/wp-json/geodir/v2/markers/?gd-ajax=1&post_type=gd_ems&country=nigeria&region=${slug}`;
   try {
     const response = await axios.get(url);
-    res.json(response.data);
+
+    // ✅ normalize response
+    res.json({ success: true, data: response.data });
   } catch (err) {
     console.error("❌ Markers error:", err.message);
-    res.status(500).json({ error: "Failed to fetch markers" });
+    res.status(500).json({ success: false, error: "Failed to fetch markers" });
   }
 });
+
 
 // 🔹 Get cleaned Ninja Form fields
 app.get("/form-fields/:formId", async (req, res) => {
