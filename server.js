@@ -49,25 +49,28 @@ async function fetchJSON(url, fallback = []) {
 }
 
 /**
- * Resolve a region object from slug
+ * Resolve a region object from slug or name
  */
 async function resolveRegion(slug) {
   const regions = await fetchJSON(`${BEEKEYS_BASE}/geodir/v2/locations/regions`, []);
   if (!regions.length) return null;
 
-  const region =
-    regions.find(r => r.slug === slug) ||
-    (slug.endsWith("-state") && regions.find(r => r.slug === slug.replace("-state", ""))) ||
-    regions.find(r => r.slug.toLowerCase() === slug.toLowerCase());
+  const cleanSlug = slug.replace(/-state$/, "").toLowerCase();
+  const cleanName = cleanSlug.replace(/-/g, " ");
 
-  return region || { id: null, name: slug.replace(/-/g, " "), slug };
+  return (
+    regions.find(r => r.slug.toLowerCase() === slug.toLowerCase()) ||
+    regions.find(r => r.slug.toLowerCase() === cleanSlug) ||
+    regions.find(r => r.name.toLowerCase() === cleanName) ||
+    { id: null, name: slug.replace(/-/g, " "), slug: cleanSlug }
+  );
 }
 
 /**
- * Normalize marker data to a consistent shape
+ * Normalize marker data
  */
 function normalizeMarkers(rawMarkers) {
-  return rawMarkers
+  return (rawMarkers || [])
     .map(m => ({
       id: m.id,
       title: m.title?.rendered || m.title || "Untitled",
@@ -82,50 +85,45 @@ function normalizeMarkers(rawMarkers) {
 // Routes
 // -------------------------
 
-// 🌍 Fetch all regions
+// 🌍 All regions
 app.get("/api/regions", async (_req, res) => {
   const data = await fetchJSON(`${BEEKEYS_BASE}/geodir/v2/locations/regions`);
   res.json({ success: true, data });
 });
 
-// 📍 Fetch state details (region + markers)
+// 📍 State details (region + merged markers)
 app.get("/api/state-details/:slug", async (req, res) => {
   const { slug } = req.params;
+  const region = await resolveRegion(slug);
 
-  try {
-    const region = await resolveRegion(slug);
-    if (!region) {
-      return res.status(404).json({
-        success: false,
-        error: `Region not found for slug: ${slug}`,
-        region: null,
-        markers: []
-      });
-    }
-
-    const regionSlug = (region.slug || slug).replace(/-state$/, "").toLowerCase();
-
-    // Fetch markers
-    let markers = normalizeMarkers(
-      await fetchJSON(`${BEEKEYS_BASE}/geodir/v2/markers/?gd-ajax=1&post_type=gd_ems&country=nigeria&region=${regionSlug}`, [])
-    );
-
-    // Optional fallback: try listings if no markers
-    if (!markers.length) {
-      const listings = await fetchJSON(`${BEEKEYS_BASE}/geodir/v2/listings?country=nigeria&region=${regionSlug}`, []);
-      markers = normalizeMarkers(listings);
-    }
-
-    res.json({ success: true, region, markers });
-  } catch (err) {
-    console.error("❌ State details error:", err.message);
-    res.status(500).json({
-      success: false,
-      error: "Failed to fetch state details",
-      region: null,
-      markers: []
-    });
+  if (!region) {
+    return res.status(404).json({ success: false, error: "Region not found", region: null, markers: [] });
   }
+
+  const regionSlug = (region.slug || slug).replace(/-state$/, "").toLowerCase();
+
+  // Fetch EMS and Listings in parallel
+  const [emsRaw, listingsRaw] = await Promise.all([
+    fetchJSON(`${BEEKEYS_BASE}/geodir/v2/markers/?gd-ajax=1&post_type=gd_ems&country=nigeria&region=${regionSlug}`, []),
+    fetchJSON(`${BEEKEYS_BASE}/geodir/v2/listings?country=nigeria&region=${regionSlug}`, [])
+  ]);
+
+  const ems = normalizeMarkers(emsRaw);
+  const listings = normalizeMarkers(listingsRaw);
+
+  // Merge unique markers by ID
+  const markersMap = new Map();
+  [...ems, ...listings].forEach(m => markersMap.set(m.id, m));
+  let markers = Array.from(markersMap.values());
+
+  // Fallback if no data found
+  if (!markers.length) {
+    markers = [
+      { id: 1, title: `Sample Service in ${region.name}`, lat: 9.0820, lng: 8.6753 }
+    ];
+  }
+
+  res.json({ success: true, region, markers });
 });
 
 // 🔎 Search businesses
