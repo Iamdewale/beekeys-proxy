@@ -48,17 +48,36 @@ app.get("/api/regions", async (req, res) => {
 });
 
 // 📍 Markers by state
-app.get("/api/markers/:slug", async (req, res) => {
-  const slug = req.params.slug;
-  const url = `https://app.beekeys.com/nigeria/wp-json/geodir/v2/markers/?gd-ajax=1&post_type=gd_ems&country=nigeria&region=${slug}`;
+// Markers by state
+// server.js
+app.get("/api/state-details/:slug", async (req, res) => {
+  const { slug } = req.params;
+
   try {
-    const response = await axios.get(url);
-    res.json({ success: true, data: response.data });
+    // 1️⃣ Get all regions
+    const regionsURL = "https://app.beekeys.com/nigeria/wp-json/geodir/v2/locations/regions";
+    const regionsRes = await axios.get(regionsURL);
+    const regions = Array.isArray(regionsRes.data) ? regionsRes.data : [];
+
+    const region = regions.find(r => r.slug === slug);
+
+    // 2️⃣ Get markers for this region
+    const markersURL = `https://app.beekeys.com/nigeria/wp-json/geodir/v2/markers/?gd-ajax=1&post_type=gd_ems&country=nigeria&region=${slug}`;
+    const markersRes = await axios.get(markersURL);
+    const markers = Array.isArray(markersRes.data) ? markersRes.data : [];
+
+    res.json({
+      success: true,
+      region: region || { slug, name: slug.replace(/-/g, " ") },
+      markers
+    });
   } catch (err) {
-    console.error("❌ Markers error:", err.message);
-    res.status(500).json({ success: false, error: "Failed to fetch markers" });
+    console.error("❌ State details error:", err.message);
+    res.status(500).json({ success: false, error: "Failed to fetch state details" });
   }
 });
+
+
 
 // 🔹 Combined state details (region + markers)
 app.get("/api/state-details/:slug", async (req, res) => {
