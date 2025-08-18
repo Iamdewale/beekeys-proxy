@@ -48,8 +48,6 @@ app.get("/api/regions", async (req, res) => {
 });
 
 // 📍 Markers by state
-// Markers by state
-// server.js
 app.get("/api/state-details/:slug", async (req, res) => {
   const { slug } = req.params;
 
@@ -71,6 +69,7 @@ app.get("/api/state-details/:slug", async (req, res) => {
       region: region || { slug, name: slug.replace(/-/g, " ") },
       markers
     });
+
   } catch (err) {
     console.error("❌ State details error:", err.message);
     res.status(500).json({ success: false, error: "Failed to fetch state details" });
@@ -113,19 +112,25 @@ app.get("/api/state-details/:slug", async (req, res) => {
   }
 });
 
+// 🏢 Business details
 app.get("/api/business/:id", async (req, res) => {
   const { id } = req.params;
 
   try {
-    const url = `https://app.beekeys.com/nigeria/wp-json/geodir/v2/posts/${id}`;
+    const url = `https://app.beekeys.com/nigeria/wp-json/geodir/v2/single/${id}`;
     const response = await axios.get(url);
 
-    res.json({ success: true, data: response.data });
+    // Normalize structure
+    res.json({
+      success: true,
+      business: response.data || null,
+    });
   } catch (err) {
     console.error("❌ Business details error:", err.message);
     res.status(500).json({ success: false, error: "Failed to fetch business details" });
   }
 });
+
 
 
 
