@@ -137,23 +137,43 @@ app.post("/submit-ninja", async (req, res) => {
       return res.status(400).json({ success: false, error: "Missing formData" });
     }
 
-    const nonce = await getNonce(formData.id || "4");
+    // 🔎 Get fresh nonce
+    const nonceRes = await axios.get(
+      `${BEEKEYS_URL}?action=nf_get_form&form_id=${formData.id || "4"}`,
+      { headers: { "User-Agent": "Mozilla/5.0" } }
+    );
+    console.log("🔑 Nonce response:", JSON.stringify(nonceRes.data, null, 2));
 
-    const params = new URLSearchParams();
-    params.append("action", "nf_ajax_submit");
-    params.append("security", nonce);
-    params.append("formData", JSON.stringify(formData));
+    const nonce =
+      nonceRes.data?.settings?.key || nonceRes.data?.settings?.nonce;
 
-    const response = await axios.post(BEEKEYS_URL, params.toString(), {
+    if (!nonce) {
+      return res
+        .status(500)
+        .json({ success: false, error: "Failed to fetch nonce" });
+    }
+
+    // ✅ Build payload as Ninja Forms expects
+    const payload = new URLSearchParams();
+    payload.append("action", "nf_ajax_submit");
+    payload.append("security", nonce);
+    payload.append("formData", JSON.stringify(formData));
+
+    console.log("📤 Submitting payload:", formData);
+
+    const response = await axios.post(BEEKEYS_URL, payload.toString(), {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
+
+    console.log("✅ WP Response:", response.data);
 
     res.json({ success: true, wpResponse: response.data });
   } catch (err) {
     console.error("❌ Submit error:", err.message);
-    res.status(500).json({ success: false, error: "Form submission failed" });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 // 🔹 File upload
 app.post("/upload-ninja", upload.single("file"), async (req, res) => {
