@@ -83,19 +83,33 @@ app.get("/api/state-details/:slug", async (req, res) => {
   const slug = req.params.slug;
 
   try {
-    // 1️⃣ Get region info from WP
+    // 1️⃣ Get regions list
     const regionsURL =
       "https://app.beekeys.com/nigeria/wp-json/geodir/v2/locations/regions";
     const regionsRes = await axios.get(regionsURL);
     const regions = Array.isArray(regionsRes.data) ? regionsRes.data : [];
 
-    // Find the region by slug
-    const region = regions.find((r) => r.slug === slug) || null;
-    if (!region) {
-      console.warn(`⚠️ No region details for ${slug}, skipping…`);
+    // 2️⃣ Try to find region
+    let region = regions.find((r) => r.slug === slug);
+
+    // Fallback: strip "-state" from slug if needed
+    if (!region && slug.endsWith("-state")) {
+      const fallbackSlug = slug.replace("-state", "");
+      region = regions.find((r) => r.slug === fallbackSlug);
     }
 
-    // 2️⃣ Get markers (business listings) for this region
+    // Fallback: try case-insensitive match
+    if (!region) {
+      region = regions.find((r) => r.slug.toLowerCase() === slug.toLowerCase());
+    }
+
+    // If still not found → create placeholder so UI doesn’t break
+    if (!region) {
+      console.warn(`⚠️ No exact match for slug: ${slug}`);
+      region = { id: null, name: slug.replace(/-/g, " "), slug };
+    }
+
+    // 3️⃣ Get markers for this region
     const markersURL = `https://app.beekeys.com/nigeria/wp-json/geodir/v2/markers/?gd-ajax=1&post_type=gd_ems&country=nigeria&region=${slug}`;
     let markers = [];
     try {
@@ -105,11 +119,11 @@ app.get("/api/state-details/:slug", async (req, res) => {
       console.warn(`⚠️ Failed to fetch markers for ${slug}:`, err.message);
     }
 
-    // ✅ Always respond in the same shape
+    // ✅ Return consistent shape
     res.json({
       success: true,
-      region,   // { id, name, slug, ... } or null
-      markers,  // [] if none found
+      region,
+      markers,
     });
   } catch (err) {
     console.error("❌ State details error:", err.message);
@@ -121,6 +135,7 @@ app.get("/api/state-details/:slug", async (req, res) => {
     });
   }
 });
+
 
 // 🏢 Business details
 app.get("/api/business/:id", async (req, res) => {
