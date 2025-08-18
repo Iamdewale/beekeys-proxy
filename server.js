@@ -10,24 +10,25 @@ const PORT = process.env.PORT || 10000;
 
 const allowedOrigins = [
   "https://beekeys-home.vercel.app",
-  "http://localhost:3000"
+  "http://localhost:3000",
 ];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  })
+);
 
 app.use(express.json());
 
 const upload = multer({ storage: multer.memoryStorage() });
-
 const BEEKEYS_URL = "https://app.beekeys.com/nigeria/wp-admin/admin-ajax.php";
 
 // 🔹 Fetch Ninja Form nonce
@@ -44,10 +45,12 @@ async function getNonce(formId = "4") {
 // Regions
 app.get("/api/regions", async (req, res) => {
   try {
-    const apiURL = "https://app.beekeys.com/nigeria/wp-json/geodir/v2/locations/regions";
+    const apiURL =
+      "https://app.beekeys.com/nigeria/wp-json/geodir/v2/locations/regions";
     const response = await axios.get(apiURL);
     res.json(response.data);
   } catch (err) {
+    console.error("❌ Regions error:", err.message);
     res.status(500).json({ error: "Failed to fetch regions" });
   }
 });
@@ -60,6 +63,7 @@ app.get("/api/markers/:slug", async (req, res) => {
     const response = await axios.get(url);
     res.json(response.data);
   } catch (err) {
+    console.error("❌ Markers error:", err.message);
     res.status(500).json({ error: "Failed to fetch markers" });
   }
 });
@@ -73,18 +77,34 @@ app.get("/form-fields/:formId", async (req, res) => {
       { headers: { "User-Agent": "Mozilla/5.0" } }
     );
 
-    const rawFields = response.data?.fields || [];
+    const form = response.data;
 
-    // Build a clean key -> id map
+    // Some sites put fields in different locations
+    const rawFields = form?.fields || form?.formData?.fields || [];
+
+    if (!rawFields.length) {
+      return res.status(404).json({
+        success: false,
+        error: "No fields found for this form",
+        raw: form,
+      });
+    }
+
+    // Build a clean lowercase key -> id map
     const fieldMap = {};
     rawFields.forEach((f) => {
-      const key = f.label.toLowerCase().replace(/\s+/g, "");
-      fieldMap[key] = f.id;
+      if (f?.id && f?.key) {
+        fieldMap[f.key.toLowerCase()] = f.id;
+      } else if (f?.id && f?.label) {
+        const key = f.label.toLowerCase().replace(/\s+/g, "");
+        fieldMap[key] = f.id;
+      }
     });
 
     res.json({ success: true, formId, fieldMap });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error("❌ Form fields error:", err.message);
+    res.status(500).json({ success: false, error: "Failed to fetch form fields" });
   }
 });
 
@@ -92,7 +112,9 @@ app.get("/form-fields/:formId", async (req, res) => {
 app.post("/submit-ninja", async (req, res) => {
   try {
     const { formData } = req.body;
-    if (!formData) return res.status(400).json({ success: false, error: "Missing formData" });
+    if (!formData) {
+      return res.status(400).json({ success: false, error: "Missing formData" });
+    }
 
     const nonce = await getNonce(formData.id || "4");
 
@@ -107,6 +129,7 @@ app.post("/submit-ninja", async (req, res) => {
 
     res.json({ success: true, wpResponse: response.data });
   } catch (err) {
+    console.error("❌ Submit error:", err.message);
     res.status(500).json({ success: false, error: "Form submission failed" });
   }
 });
@@ -114,21 +137,33 @@ app.post("/submit-ninja", async (req, res) => {
 // 🔹 File upload
 app.post("/upload-ninja", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ success: false, error: "No file uploaded" });
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ success: false, error: "No file uploaded" });
+    }
+
+    const formId = req.body.formId || "4"; // default to Listing Form
+    const fieldId = req.body.fieldId || "164"; // default upload field id
 
     const form = new FormData();
     form.append("action", "nf_fu_upload");
-    form.append("form_id", "4");  // Use your listing form ID
-    form.append("field_id", "164"); // Replace with actual upload field ID
+    form.append("form_id", formId);
+    form.append("field_id", fieldId);
     form.append("file", req.file.buffer, req.file.originalname);
 
-    const response = await axios.post(BEEKEYS_URL, form, { headers: form.getHeaders() });
+    const response = await axios.post(BEEKEYS_URL, form, {
+      headers: form.getHeaders(),
+    });
 
     res.json({ success: true, wpResponse: response.data });
   } catch (err) {
+    console.error("❌ Upload error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // ========== START ==========
-app.listen(PORT, () => console.log(`✅ Proxy API running at http://localhost:${PORT}`));
+app.listen(PORT, () =>
+  console.log(`✅ Proxy API running at http://localhost:${PORT}`)
+);
