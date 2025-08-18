@@ -94,6 +94,20 @@ app.get("/api/state-details/:slug", async (req, res) => {
   }
 });
 
+app.get("/api/business/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const url = `https://app.beekeys.com/nigeria/wp-json/geodir/v2/posts/${id}`;
+    const response = await axios.get(url);
+
+    res.json({ success: true, data: response.data });
+  } catch (err) {
+    console.error("❌ Business details error:", err.message);
+    res.status(500).json({ success: false, error: "Failed to fetch business details" });
+  }
+});
+
 
 
 app.listen(PORT, () =>
