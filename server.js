@@ -198,6 +198,27 @@ app.get("/form-fields/:id", async (req, res) => {
   res.json({ success: true, fields: form.fields || [] });
 });
 
+// 🆕 User registration proxy
+app.post("/api/register", async (req, res) => {
+  try {
+    const wpRes = await axios.post(
+      "https://app.beekeys.com/nigeria/wp-json/userswp/v1/register",
+      {
+        user_login: req.body.user_login,
+        user_email: req.body.user_email,
+        user_pass: req.body.user_pass,
+        // Add any other required fields here
+      },
+      { headers: { "Content-Type": "application/json" } }
+    );
+    res.status(wpRes.status).json(wpRes.data);
+  } catch (err) {
+    res
+      .status(err.response?.status || 500)
+      .json(err.response?.data || { error: "Registration failed" });
+  }
+});
+
 // -------------------------
 // Start Server
 // -------------------------
