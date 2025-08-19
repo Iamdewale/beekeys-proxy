@@ -307,14 +307,20 @@ app.post("/submit-ninja", async (req, res) => {
     const wpRes = await axios.post(
       `${BEEKEYS_BASE}/ninja-forms/v2/forms/${formData.id}/submissions`,
       formData,
-      { headers: { "Content-Type": "application/json" } }
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Ninja-Forms-API-Key": process.env.NF_API_KEY  // keep this in .env
+        }
+      }
     );
 
     res.json({ success: true, ...wpRes.data });
   } catch (err) {
     console.error("❌ submit-ninja error:", err.message);
-    res.status(err.response?.status || 500)
-       .json({ success: false, error: "Form submission failed" });
+    res
+      .status(err.response?.status || 500)
+      .json({ success: false, error: "Form submission failed" });
   }
 });
 
