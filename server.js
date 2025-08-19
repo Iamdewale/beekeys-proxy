@@ -241,34 +241,37 @@ app.get("/api/business/:id", async (req, res) => {
   res.json({ success: true, business });
 });
 
-// 📝 Form fields → fieldMap
+
+
+// 📝 Get form field map for React
 app.get("/form-fields/:id", async (req, res) => {
   const { id } = req.params;
-
   try {
-    // Fetch form config from WP Ninja Forms API
     const form = await fetchJSON(`${BEEKEYS_BASE}/ninja-forms/v2/forms/${id}`, {});
+    
+    // Some NF installs nest fields differently
+    const fieldsArray = form.fields || form.formData?.fields || [];
 
-    if (!form.fields || !Array.isArray(form.fields)) {
+    if (!Array.isArray(fieldsArray) || !fieldsArray.length) {
       return res.status(404).json({ success: false, error: "No fields found" });
     }
 
-    // Build { fieldKey: fieldID } map
+    // Map frontend slug keys to actual NF IDs
     const fieldMap = {};
-    form.fields.forEach(f => {
-      if (f.key) {
-        fieldMap[f.key.toLowerCase()] = f.id; // match React's lowercased keys
+    fieldsArray.forEach(f => {
+      if (f.key && f.id) {
+        fieldMap[f.key.toLowerCase()] = f.id;
       }
     });
 
     res.json({ success: true, fieldMap });
   } catch (err) {
-    console.error("❌ Field map error:", err.message);
+    console.error("❌ form-fields error:", err.message);
     res.status(500).json({ success: false, error: "Failed to load form fields" });
   }
 });
 
-// 📤 File upload → Ninja Forms
+// 📤 File upload to Ninja Forms
 app.post("/upload-ninja", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
@@ -278,7 +281,6 @@ app.post("/upload-ninja", upload.single("file"), async (req, res) => {
     const formData = new FormData();
     formData.append("file", req.file.buffer, req.file.originalname);
 
-    // Ninja Forms upload endpoint
     const wpRes = await axios.post(
       `${BEEKEYS_BASE}/ninja-forms/v2/uploads`,
       formData,
@@ -287,14 +289,15 @@ app.post("/upload-ninja", upload.single("file"), async (req, res) => {
 
     res.json({ success: true, wpResponse: wpRes.data });
   } catch (err) {
-    console.error("❌ Upload error:", err.message);
+    console.error("❌ upload-ninja error:", err.message);
     res.status(err.response?.status || 500)
        .json({ success: false, error: "File upload failed" });
   }
 });
 
 
-// 📮 Submit form → Ninja Forms
+
+// 📮 Submit form data to Ninja Forms
 app.post("/submit-ninja", async (req, res) => {
   try {
     const { formData } = req.body;
@@ -310,11 +313,12 @@ app.post("/submit-ninja", async (req, res) => {
 
     res.json({ success: true, ...wpRes.data });
   } catch (err) {
-    console.error("❌ Submission error:", err.message);
+    console.error("❌ submit-ninja error:", err.message);
     res.status(err.response?.status || 500)
        .json({ success: false, error: "Form submission failed" });
   }
 });
+
 
 
 // 🆕 User registration proxy
