@@ -7,6 +7,7 @@ require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+const rateLimit = require("express-rate-limit");
 
 const allowedOrigins = [
   "https://beekeys-home.vercel.app",
@@ -218,6 +219,43 @@ app.post("/api/register", async (req, res) => {
       .json(err.response?.data || { error: "Registration failed" });
   }
 });
+
+// Rate limiter: max 3 requests per 15 minutes per IP
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 3,
+  message: {
+    success: false,
+    message: "Too many password reset requests from this IP, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 🔑 Forgot Password proxy with rate limiting
+app.post("/api/forgot-password", forgotPasswordLimiter, async (req, res) => {
+  const { user_login } = req.body;
+
+  if (!user_login) {
+    return res.status(400).json({ success: false, message: "Email or username is required." });
+  }
+
+  try {
+    const wpRes = await axios.post(
+      "https://app.beekeys.com/nigeria/wp-json/custom/v1/forgot-password",
+      { user_login },
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    res.status(wpRes.status).json(wpRes.data);
+  } catch (err) {
+    console.error("Forgot password proxy error:", err.message);
+    res
+      .status(err.response?.status || 500)
+      .json(err.response?.data || { success: false, message: "Password reset failed" });
+  }
+});
+
 
 // -------------------------
 // Start Server
