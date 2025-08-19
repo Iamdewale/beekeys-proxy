@@ -14,6 +14,13 @@ const allowedOrigins = [
   "http://localhost:3000",
 ];
 
+// -------------------------
+// Unsplash Config & Cache
+// -------------------------
+const UNSPLASH_KEY = process.env.UNSPLASH_KEY;
+const imageCache = {}; // { "Lagos": { url, credit, lastFetched } }
+const CACHE_TTL = 1000 * 60 * 60 * 24; // 24h
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -115,6 +122,35 @@ async function resolveRegion(slug) {
   );
 }
 
+async function getStateImage(stateName) {
+  const cached = imageCache[stateName];
+  const isFresh = cached && (Date.now() - cached.lastFetched < CACHE_TTL);
+
+  if (isFresh) return cached;
+
+  try {
+    const query = `${stateName} Nigeria`;
+    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&orientation=landscape&per_page=1&client_id=${UNSPLASH_KEY}`;
+
+    const res = await axios.get(url);
+    const first = res.data.results[0];
+
+    const imgData = {
+      url: first?.urls?.regular || null,
+      credit: first
+        ? { name: first.user?.name, link: first.user?.links?.html }
+        : null,
+      lastFetched: Date.now()
+    };
+
+    imageCache[stateName] = imgData;
+    return imgData;
+  } catch (err) {
+    console.warn(`⚠️ Unsplash fetch failed for ${stateName}:`, err.message);
+    return { url: null, credit: null, lastFetched: Date.now() };
+  }
+}
+
 /**
  * Normalize marker data
  */
@@ -134,9 +170,22 @@ function normalizeMarkers(rawMarkers) {
 // Routes
 // -------------------------
 
-// 🌍 All regions
+
+// 🌍 All regions with Unsplash thumbnails
 app.get("/api/regions", async (_req, res) => {
-  const data = await fetchJSON(`${BEEKEYS_BASE}/geodir/v2/locations/regions?per_page=50`);
+  const rawRegions = await fetchJSON(`${BEEKEYS_BASE}/geodir/v2/locations/regions?per_page=50`);
+
+  const data = await Promise.all(
+    (rawRegions || []).map(async region => {
+      const img = await getStateImage(region.name || region.title);
+      return {
+        ...region,
+        thumbnail: img.url,
+        credit: img.credit
+      };
+    })
+  );
+
   res.json({ success: true, data });
 });
 
