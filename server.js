@@ -1,5 +1,4 @@
 // server.js
-
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
@@ -36,6 +35,49 @@ const upload = multer({ storage: multer.memoryStorage() });
 const BEEKEYS_BASE = "https://app.beekeys.com/nigeria/wp-json";
 
 /**
+ * Frontend slug → API-recognised region name mapping
+ */
+const regionMap = {
+  "abia-state": "Abia",
+  "adamawa-state": "Adamawa",
+  "akwa-ibom-state": "Akwa Ibom",
+  "anambra-state": "Anambra",
+  "bauchi-state": "Bauchi",
+  "bayelsa-state": "Bayelsa",
+  "benue-state": "Benue",
+  "borno-state": "Borno",
+  "cross-river-state": "Cross River",
+  "delta-state": "Delta",
+  "ebonyi-state": "Ebonyi",
+  "edo-state": "Edo",
+  "ekiti-state": "Ekiti",
+  "enugu-state": "Enugu",
+  "gombe-state": "Gombe",
+  "imo-state": "Imo",
+  "jigawa-state": "Jigawa",
+  "kaduna-state": "Kaduna",
+  "kano-state": "Kano",
+  "katsina-state": "Katsina",
+  "kebbi-state": "Kebbi",
+  "kogi-state": "Kogi",
+  "kwara-state": "Kwara",
+  "lagos-state": "Lagos",
+  "nasarawa-state": "Nasarawa",
+  "niger-state": "Niger",
+  "ogun-state": "Ogun",
+  "ondo-state": "Ondo",
+  "osun-state": "Osun",
+  "oyo-state": "Oyo",
+  "plateau-state": "Plateau",
+  "rivers-state": "Rivers",
+  "sokoto-state": "Sokoto",
+  "taraba-state": "Taraba",
+  "yobe-state": "Yobe",
+  "zamfara-state": "Zamfara",
+  "fct-abuja": "Federal Capital Territory"
+};
+
+/**
  * Fetch JSON from an external URL with error handling
  */
 async function fetchJSON(url, fallback = []) {
@@ -49,9 +91,15 @@ async function fetchJSON(url, fallback = []) {
 }
 
 /**
- * Resolve a region object from slug or name
+ * Resolve a region object from slug, using mapping first, then API fallback
  */
 async function resolveRegion(slug) {
+  const mappedName = regionMap[slug];
+  if (mappedName) {
+    return { id: null, name: mappedName, slug: mappedName };
+  }
+
+  // Fallback: try matching against live /locations/regions
   const regions = await fetchJSON(`${BEEKEYS_BASE}/geodir/v2/locations/regions`, []);
   if (!regions.length) return null;
 
@@ -100,12 +148,13 @@ app.get("/api/state-details/:slug", async (req, res) => {
     return res.status(404).json({ success: false, error: "Region not found", region: null, markers: [] });
   }
 
-  const regionSlug = (region.slug || slug).replace(/-state$/, "").toLowerCase();
+  // Use mapped name/slug directly
+  const apiRegionParam = encodeURIComponent(region.name);
 
   // Fetch EMS and Listings in parallel
   const [emsRaw, listingsRaw] = await Promise.all([
-    fetchJSON(`${BEEKEYS_BASE}/geodir/v2/markers/?gd-ajax=1&post_type=gd_ems&country=nigeria&region=${regionSlug}`, []),
-    fetchJSON(`${BEEKEYS_BASE}/geodir/v2/listings?country=nigeria&region=${regionSlug}`, [])
+    fetchJSON(`${BEEKEYS_BASE}/geodir/v2/markers/?gd-ajax=1&post_type=gd_ems&country=nigeria&region=${apiRegionParam}`, []),
+    fetchJSON(`${BEEKEYS_BASE}/geodir/v2/listings?country=nigeria&region=${apiRegionParam}`, [])
   ]);
 
   const ems = normalizeMarkers(emsRaw);
