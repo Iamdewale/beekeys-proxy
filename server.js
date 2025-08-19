@@ -136,7 +136,7 @@ function normalizeMarkers(rawMarkers) {
 
 // 🌍 All regions
 app.get("/api/regions", async (_req, res) => {
-  const data = await fetchJSON(`${BEEKEYS_BASE}/geodir/v2/locations/regions`);
+  const data = await fetchJSON(`${BEEKEYS_BASE}/geodir/v2/locations/regions?per_page=50`);
   res.json({ success: true, data });
 });
 
