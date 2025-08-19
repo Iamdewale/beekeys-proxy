@@ -241,12 +241,81 @@ app.get("/api/business/:id", async (req, res) => {
   res.json({ success: true, business });
 });
 
-// 📝 Form fields
+// 📝 Form fields → fieldMap
 app.get("/form-fields/:id", async (req, res) => {
   const { id } = req.params;
-  const form = await fetchJSON(`${BEEKEYS_BASE}/ninja-forms/v2/forms/${id}`, {});
-  res.json({ success: true, fields: form.fields || [] });
+
+  try {
+    // Fetch form config from WP Ninja Forms API
+    const form = await fetchJSON(`${BEEKEYS_BASE}/ninja-forms/v2/forms/${id}`, {});
+
+    if (!form.fields || !Array.isArray(form.fields)) {
+      return res.status(404).json({ success: false, error: "No fields found" });
+    }
+
+    // Build { fieldKey: fieldID } map
+    const fieldMap = {};
+    form.fields.forEach(f => {
+      if (f.key) {
+        fieldMap[f.key.toLowerCase()] = f.id; // match React's lowercased keys
+      }
+    });
+
+    res.json({ success: true, fieldMap });
+  } catch (err) {
+    console.error("❌ Field map error:", err.message);
+    res.status(500).json({ success: false, error: "Failed to load form fields" });
+  }
 });
+
+// 📤 File upload → Ninja Forms
+app.post("/upload-ninja", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: "No file provided" });
+    }
+
+    const formData = new FormData();
+    formData.append("file", req.file.buffer, req.file.originalname);
+
+    // Ninja Forms upload endpoint
+    const wpRes = await axios.post(
+      `${BEEKEYS_BASE}/ninja-forms/v2/uploads`,
+      formData,
+      { headers: formData.getHeaders() }
+    );
+
+    res.json({ success: true, wpResponse: wpRes.data });
+  } catch (err) {
+    console.error("❌ Upload error:", err.message);
+    res.status(err.response?.status || 500)
+       .json({ success: false, error: "File upload failed" });
+  }
+});
+
+
+// 📮 Submit form → Ninja Forms
+app.post("/submit-ninja", async (req, res) => {
+  try {
+    const { formData } = req.body;
+    if (!formData?.id || !formData?.fields) {
+      return res.status(400).json({ success: false, error: "Invalid payload" });
+    }
+
+    const wpRes = await axios.post(
+      `${BEEKEYS_BASE}/ninja-forms/v2/forms/${formData.id}/submissions`,
+      formData,
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    res.json({ success: true, ...wpRes.data });
+  } catch (err) {
+    console.error("❌ Submission error:", err.message);
+    res.status(err.response?.status || 500)
+       .json({ success: false, error: "Form submission failed" });
+  }
+});
+
 
 // 🆕 User registration proxy
 app.post("/api/register", async (req, res) => {
