@@ -14,6 +14,8 @@ const allowedOrigins = [
   "http://localhost:3000",
 ];
 
+app.use(express.json());
+
 // -------------------------
 // Unsplash Config & Cache
 // -------------------------
@@ -243,10 +245,11 @@ app.get("/api/business/:id", async (req, res) => {
 
 
 
-// 📮 Submit form data to Ninja Forms via private WP route
+// 📮 Submit form
 if (!process.env.PROXY_SECRET) {
   throw new Error("Missing PROXY_SECRET in environment");
 }
+console.log("📥 Incoming payload:", req.body);
 
 app.post("/submit-business", async (req, res) => {
   const proxySecret = req.headers["x-proxy-secret"];
