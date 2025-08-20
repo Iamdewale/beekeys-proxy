@@ -249,9 +249,9 @@ app.get("/api/business/:id", async (req, res) => {
 if (!process.env.PROXY_SECRET) {
   throw new Error("Missing PROXY_SECRET in environment");
 }
-console.log("📥 Incoming payload:", req.body);
-
 app.post("/submit-business", async (req, res) => {
+  console.log("📥 Incoming payload:", req.body); // ✅ Now req.body is available
+
   const proxySecret = req.headers["x-proxy-secret"];
   if (proxySecret !== process.env.PROXY_SECRET) {
     return res.status(403).json({ success: false, error: "Unauthorized" });
@@ -293,16 +293,13 @@ app.post("/submit-business", async (req, res) => {
       createdAt: new Date()
     };
 
-    // TODO: Save to database or forward to another service
     console.log("✅ Business submitted:", saved);
-
     res.json({ success: true, data: saved });
   } catch (err) {
     console.error("❌ submit-business error:", err.message);
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
-
 
 
 // 🆕 User registration proxy
