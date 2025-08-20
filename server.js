@@ -243,145 +243,63 @@ app.get("/api/business/:id", async (req, res) => {
 
 
 
-// 🔎 Fetch Ninja Forms field mapping
-app.get("/form-fields/:id", async (req, res) => {
-  const { id } = req.params;
-
-  if (!id) {
-    return res.status(400).json({
-      success: false,
-      error: "Form ID is required",
-    });
-  }
-
-  try {
-    const url = `${process.env.BEEKEYS_BASE}/wp-json/custom-forms/v1/form-fields/${id}`;
-
-    // Secure header
-    const form = await fetchJSON(url, {
-      headers: {
-        "X-Proxy-Secret": process.env.PROXY_SECRET || "",
-      },
-    });
-
-    // Normalize possible shapes
-    const fields =
-      form?.fields ||
-      form?.form?.fields ||
-      form?.data?.fields ||
-      null;
-
-    if (!fields || !Array.isArray(fields)) {
-      return res.status(404).json({
-        success: false,
-        error: "No fields found in response",
-        raw: form, // 👈 keep this for debugging
-      });
-    }
-
-    // Build key→id map
-    const fieldMap = {};
-    fields.forEach((f) => {
-      if (f.key && f.id) {
-        fieldMap[f.key.toLowerCase()] = f.id;
-      }
-    });
-
-    res.json({
-      success: true,
-      fieldMap,
-    });
-  } catch (err) {
-    console.error(`❌ form-fields error (id=${id}):`, err.message);
-    res.status(500).json({
-      success: false,
-      error: "Failed to load form fields",
-    });
-  }
-});
-
-
-
-// 📤 File upload to Ninja Forms
-app.post("/upload-ninja", upload.single("file"), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ success: false, error: "No file provided" });
-  }
-
-  try {
-    const formData = new FormData();
-    formData.append("file", req.file.buffer, req.file.originalname);
-
-    const wpRes = await axios.post(
-      `${process.env.BEEKEYS_BASE}/ninja-forms/v2/uploads`,
-      formData,
-      {
-        headers: {
-          ...formData.getHeaders(),
-          "X-Proxy-Secret": process.env.PROXY_SECRET || ""
-        }
-      }
-    );
-
-    res.json({ success: true, wpResponse: wpRes.data });
-  } catch (err) {
-    console.error("❌ upload-ninja error:", {
-      message: err.message,
-      status: err.response?.status,
-      data: err.response?.data
-    });
-    res.status(err.response?.status || 500).json({
-      success: false,
-      error: err.response?.data?.message || "File upload failed"
-    });
-  }
-});
-
 // 📮 Submit form data to Ninja Forms via private WP route
 if (!process.env.PROXY_SECRET) {
   throw new Error("Missing PROXY_SECRET in environment");
 }
 
-app.post("/submit-ninja", async (req, res) => {
-  const { formData } = req.body;
-  if (!formData?.id || !formData?.fields) {
-    return res.status(400).json({
-      success: false,
-      error: "form_id and fields are required"
-    });
+app.post("/submit-business", async (req, res) => {
+  const proxySecret = req.headers["x-proxy-secret"];
+  if (proxySecret !== process.env.PROXY_SECRET) {
+    return res.status(403).json({ success: false, error: "Unauthorized" });
+  }
+
+  const {
+    businessName,
+    isCACRegistered,
+    slogan,
+    hasBranches,
+    images,
+    email,
+    phone,
+    website,
+    address,
+    tags,
+    description,
+    uploadedFiles = []
+  } = req.body;
+
+  if (!businessName || !email || !phone || !address) {
+    return res.status(400).json({ success: false, error: "Missing required fields" });
   }
 
   try {
-    const wpRes = await axios.post(
-      `${process.env.BEEKEYS_BASE}/wp-json/custom-forms/v1/submit`,
-      {
-        form_id: Number(formData.id),
-        fields: formData.fields
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "X-Proxy-Secret": process.env.PROXY_SECRET
-        },
-        timeout: parseInt(process.env.NINJA_TIMEOUT || "10000", 10)
-      }
-    );
+    const saved = {
+      businessName,
+      isCACRegistered,
+      slogan,
+      hasBranches,
+      images,
+      email,
+      phone,
+      website,
+      address,
+      tags,
+      description,
+      uploadedFiles,
+      createdAt: new Date()
+    };
 
-    res.json({ success: true, ...wpRes.data });
+    // TODO: Save to database or forward to another service
+    console.log("✅ Business submitted:", saved);
+
+    res.json({ success: true, data: saved });
   } catch (err) {
-    console.error("❌ Submit Ninja error:", {
-      message: err.message,
-      status: err.response?.status,
-      data: err.response?.data,
-      form_id: formData.id
-    });
-
-    res.status(err.response?.status || 500).json({
-      success: false,
-      error: err.response?.data?.message || "Form submission failed"
-    });
+    console.error("❌ submit-business error:", err.message);
+    res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
+
 
 
 // 🆕 User registration proxy
