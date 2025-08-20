@@ -243,44 +243,55 @@ app.get("/api/business/:id", async (req, res) => {
 
 
 
-// 📝 Get form field map for React
+// 🔎 Fetch Ninja Forms field mapping
 app.get("/form-fields/:id", async (req, res) => {
   const { id } = req.params;
+
   if (!id) {
-    return res.status(400).json({ success: false, error: "Form ID is required" });
+    return res.status(400).json({
+      success: false,
+      error: "Form ID is required",
+    });
   }
 
   try {
-    const url = `${process.env.BEEKEYS_BASE}/ninja-forms/v2/forms/${id}`;
+    const url = `${process.env.BEEKEYS_BASE}/wp-json/custom-forms/v1/form-fields/${id}`;
+
+    // Secure header (shared secret, same as submit route)
     const form = await fetchJSON(url, {
       headers: {
-        // Add auth if your NF install requires it
-        "X-Proxy-Secret": process.env.PROXY_SECRET || ""
-      }
+        "X-Proxy-Secret": process.env.PROXY_SECRET || "",
+      },
     });
 
-    if (!form) {
-      return res.status(404).json({ success: false, error: "Form not found" });
+    if (!form || !form.fields) {
+      return res.status(404).json({
+        success: false,
+        error: "No fields found",
+      });
     }
 
-    const fieldsArray = form.fields || form.formData?.fields || [];
-    if (!Array.isArray(fieldsArray) || !fieldsArray.length) {
-      return res.status(404).json({ success: false, error: "No fields found" });
-    }
-
+    // Normalize field mapping
     const fieldMap = {};
-    fieldsArray.forEach(f => {
+    form.fields.forEach((f) => {
       if (f.key && f.id) {
         fieldMap[f.key.toLowerCase()] = f.id;
       }
     });
 
-    res.json({ success: true, fieldMap });
+    res.json({
+      success: true,
+      fieldMap,
+    });
   } catch (err) {
     console.error(`❌ form-fields error (id=${id}):`, err.message);
-    res.status(500).json({ success: false, error: "Failed to load form fields" });
+    res.status(500).json({
+      success: false,
+      error: "Failed to load form fields",
+    });
   }
 });
+
 
 
 // 📤 File upload to Ninja Forms
@@ -317,7 +328,6 @@ app.post("/upload-ninja", upload.single("file"), async (req, res) => {
     });
   }
 });
-console.log("NF raw form data:", form);
 
 // 📮 Submit form data to Ninja Forms via private WP route
 if (!process.env.PROXY_SECRET) {
