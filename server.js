@@ -257,23 +257,31 @@ app.get("/form-fields/:id", async (req, res) => {
   try {
     const url = `${process.env.BEEKEYS_BASE}/wp-json/custom-forms/v1/form-fields/${id}`;
 
-    // Secure header (shared secret, same as submit route)
+    // Secure header
     const form = await fetchJSON(url, {
       headers: {
         "X-Proxy-Secret": process.env.PROXY_SECRET || "",
       },
     });
 
-    if (!form || !form.fields) {
+    // Normalize possible shapes
+    const fields =
+      form?.fields ||
+      form?.form?.fields ||
+      form?.data?.fields ||
+      null;
+
+    if (!fields || !Array.isArray(fields)) {
       return res.status(404).json({
         success: false,
-        error: "No fields found",
+        error: "No fields found in response",
+        raw: form, // 👈 keep this for debugging
       });
     }
 
-    // Normalize field mapping
+    // Build key→id map
     const fieldMap = {};
-    form.fields.forEach((f) => {
+    fields.forEach((f) => {
       if (f.key && f.id) {
         fieldMap[f.key.toLowerCase()] = f.id;
       }
