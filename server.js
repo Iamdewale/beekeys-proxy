@@ -295,8 +295,7 @@ app.post("/upload-ninja", upload.single("file"), async (req, res) => {
   }
 });
 
-
-// 📮 Submit form data to Ninja Forms
+// 📮 Submit form data to Ninja Forms via private WP route
 app.post("/submit-ninja", async (req, res) => {
   try {
     const { formData } = req.body;
@@ -305,13 +304,17 @@ app.post("/submit-ninja", async (req, res) => {
     }
 
     const wpRes = await axios.post(
-      `${BEEKEYS_BASE}/ninja-forms/v2/forms/${formData.id}/submissions`,
-      formData,
+      `${BEEKEYS_BASE}/wp-json/custom-forms/v1/submit`,
+      {
+        form_id: formData.id,
+        fields: formData.fields
+      },
       {
         headers: {
           "Content-Type": "application/json",
-          "X-Ninja-Forms-API-Key": process.env.NF_API_KEY  // keep this in .env
-        }
+          "X-Proxy-Secret": process.env.PROXY_SECRET
+        },
+        timeout: 10000
       }
     );
 
@@ -320,10 +323,9 @@ app.post("/submit-ninja", async (req, res) => {
     console.error("❌ submit-ninja error:", err.message);
     res
       .status(err.response?.status || 500)
-      .json({ success: false, error: "Form submission failed" });
+      .json({ success: false, error: err.response?.data || "Form submission failed" });
   }
 });
-
 
 
 // 🆕 User registration proxy
