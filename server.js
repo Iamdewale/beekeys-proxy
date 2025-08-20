@@ -317,6 +317,7 @@ app.post("/upload-ninja", upload.single("file"), async (req, res) => {
     });
   }
 });
+console.log("NF raw form data:", form);
 
 // 📮 Submit form data to Ninja Forms via private WP route
 if (!process.env.PROXY_SECRET) {
