@@ -246,17 +246,28 @@ app.get("/api/business/:id", async (req, res) => {
 // 📝 Get form field map for React
 app.get("/form-fields/:id", async (req, res) => {
   const { id } = req.params;
-  try {
-    const form = await fetchJSON(`${BEEKEYS_BASE}/ninja-forms/v2/forms/${id}`, {});
-    
-    // Some NF installs nest fields differently
-    const fieldsArray = form.fields || form.formData?.fields || [];
+  if (!id) {
+    return res.status(400).json({ success: false, error: "Form ID is required" });
+  }
 
+  try {
+    const url = `${process.env.BEEKEYS_BASE}/ninja-forms/v2/forms/${id}`;
+    const form = await fetchJSON(url, {
+      headers: {
+        // Add auth if your NF install requires it
+        "X-Proxy-Secret": process.env.PROXY_SECRET || ""
+      }
+    });
+
+    if (!form) {
+      return res.status(404).json({ success: false, error: "Form not found" });
+    }
+
+    const fieldsArray = form.fields || form.formData?.fields || [];
     if (!Array.isArray(fieldsArray) || !fieldsArray.length) {
       return res.status(404).json({ success: false, error: "No fields found" });
     }
 
-    // Map frontend slug keys to actual NF IDs
     const fieldMap = {};
     fieldsArray.forEach(f => {
       if (f.key && f.id) {
@@ -266,47 +277,66 @@ app.get("/form-fields/:id", async (req, res) => {
 
     res.json({ success: true, fieldMap });
   } catch (err) {
-    console.error("❌ form-fields error:", err.message);
+    console.error(`❌ form-fields error (id=${id}):`, err.message);
     res.status(500).json({ success: false, error: "Failed to load form fields" });
   }
 });
 
+
 // 📤 File upload to Ninja Forms
 app.post("/upload-ninja", upload.single("file"), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, error: "No file provided" });
-    }
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: "No file provided" });
+  }
 
+  try {
     const formData = new FormData();
     formData.append("file", req.file.buffer, req.file.originalname);
 
     const wpRes = await axios.post(
-      `${BEEKEYS_BASE}/ninja-forms/v2/uploads`,
+      `${process.env.BEEKEYS_BASE}/ninja-forms/v2/uploads`,
       formData,
-      { headers: formData.getHeaders() }
+      {
+        headers: {
+          ...formData.getHeaders(),
+          "X-Proxy-Secret": process.env.PROXY_SECRET || ""
+        }
+      }
     );
 
     res.json({ success: true, wpResponse: wpRes.data });
   } catch (err) {
-    console.error("❌ upload-ninja error:", err.message);
-    res.status(err.response?.status || 500)
-       .json({ success: false, error: "File upload failed" });
+    console.error("❌ upload-ninja error:", {
+      message: err.message,
+      status: err.response?.status,
+      data: err.response?.data
+    });
+    res.status(err.response?.status || 500).json({
+      success: false,
+      error: err.response?.data?.message || "File upload failed"
+    });
   }
 });
 
 // 📮 Submit form data to Ninja Forms via private WP route
-app.post("/submit-ninja", async (req, res) => {
-  try {
-    const { formData } = req.body;
-    if (!formData?.id || !formData?.fields) {
-      return res.status(400).json({ success: false, error: "Invalid payload" });
-    }
+if (!process.env.PROXY_SECRET) {
+  throw new Error("Missing PROXY_SECRET in environment");
+}
 
+app.post("/submit-ninja", async (req, res) => {
+  const { formData } = req.body;
+  if (!formData?.id || !formData?.fields) {
+    return res.status(400).json({
+      success: false,
+      error: "form_id and fields are required"
+    });
+  }
+
+  try {
     const wpRes = await axios.post(
-      `${BEEKEYS_BASE}/wp-json/custom-forms/v1/submit`,
+      `${process.env.BEEKEYS_BASE}/wp-json/custom-forms/v1/submit`,
       {
-        form_id: formData.id,
+        form_id: Number(formData.id),
         fields: formData.fields
       },
       {
@@ -314,16 +344,23 @@ app.post("/submit-ninja", async (req, res) => {
           "Content-Type": "application/json",
           "X-Proxy-Secret": process.env.PROXY_SECRET
         },
-        timeout: 10000
+        timeout: parseInt(process.env.NINJA_TIMEOUT || "10000", 10)
       }
     );
 
     res.json({ success: true, ...wpRes.data });
   } catch (err) {
-    console.error("❌ submit-ninja error:", err.message);
-    res
-      .status(err.response?.status || 500)
-      .json({ success: false, error: err.response?.data || "Form submission failed" });
+    console.error("❌ Submit Ninja error:", {
+      message: err.message,
+      status: err.response?.status,
+      data: err.response?.data,
+      form_id: formData.id
+    });
+
+    res.status(err.response?.status || 500).json({
+      success: false,
+      error: err.response?.data?.message || "Form submission failed"
+    });
   }
 });
 
