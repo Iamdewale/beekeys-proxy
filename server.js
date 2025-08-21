@@ -12,6 +12,9 @@ const businessesRoutes = require("./routes/businesses");
 const authRoutes = require("./routes/auth");
 const stateRoutes = require("./routes/state");
 
+// ✅ Import controller function
+const { getMarkersInViewport } = require("./controllers/stateController");
+
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -25,8 +28,7 @@ app.use("/api/regions", regionsRoutes);
 app.use("/api/businesses", businessesRoutes);
 app.use("/api/state-details", stateRoutes);
 
-
-// Use GET since this is a controller
+// ✅ Use GET for controller
 app.get("/api/markers-in-viewport", getMarkersInViewport);
 
 app.use("/api", authRoutes);
