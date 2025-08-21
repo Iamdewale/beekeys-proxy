@@ -39,11 +39,7 @@ const fetchRegionData = async ({
   const contentType = response.headers.get("content-type") || "";
   const raw = await response.text();
 
-  if (
-    !raw ||
-    !contentType.includes("application/json") ||
-    raw.includes("wp-login.php")
-  ) {
+  if (!raw || !contentType.includes("application/json") || raw.includes("wp-login.php")) {
     throw new Error("Session expired or invalid response. Please update cookies.");
   }
 
@@ -59,4 +55,48 @@ const fetchRegionData = async ({
   }));
 };
 
-module.exports = { fetchRegionData };
+const fetchJSON = require("../utils/fetchJSON");
+const normalizeMarkers = require("../utils/normalizeMarkers");
+
+const BEEKEYS_BASE = "https://app.beekeys.com/nigeria/wp-json";
+
+/**
+ * Build a Beekeys GeoDir API URL.
+ */
+const buildUrl = ({ postType = "gd_ems", region, north, south, east, west }) => {
+  let url = `${BEEKEYS_BASE}/geodir/v2/markers/?gd-ajax=1&post_type=${postType}&country=nigeria`;
+
+  if (region) url += `&region=${encodeURIComponent(region)}`;
+  if (north && south && east && west) {
+    url += `&north=${north}&south=${south}&east=${east}&west=${west}`;
+  }
+
+  return url;
+};
+
+/**
+ * Fetch and normalize markers for a given region or viewport.
+ */
+async function fetchMarkers({ region, north, south, east, west, includeListings = false }) {
+  const emsUrl = buildUrl({ postType: "gd_ems", region, north, south, east, west });
+  const emsRaw = await fetchJSON(emsUrl, []);
+  const ems = normalizeMarkers(emsRaw);
+
+  let listings = [];
+  if (includeListings && region) {
+    const listingsUrl = `${BEEKEYS_BASE}/geodir/v2/listings?country=nigeria&region=${encodeURIComponent(region)}`;
+    const listingsRaw = await fetchJSON(listingsUrl, []);
+    listings = normalizeMarkers(listingsRaw);
+  }
+
+  // merge unique by ID
+  const markersMap = new Map();
+  [...ems, ...listings].forEach((m) => markersMap.set(m.id, m));
+
+  return Array.from(markersMap.values());
+}
+
+module.exports = {
+  fetchRegionData,
+  fetchMarkers,
+};
