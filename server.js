@@ -23,8 +23,8 @@ app.use(multer({ storage: multer.memoryStorage() }).none());
 // Routes
 app.use("/api/regions", regionsRoutes);
 app.use("/api/businesses", businessesRoutes);
+app.use("/api/markers-in-viewport", getMarkersInViewport);
 app.use("/api/state-details", stateRoutes);
-router.get("/api/markers-in-viewport", getMarkersInViewport);
 app.use("/api", authRoutes);
 
 // Start server
