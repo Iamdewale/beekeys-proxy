@@ -1,19 +1,38 @@
 const fetch = (...args) => import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
-const fetchRegionData = async () => {
-  const url =
-    "https://app.beekeys.com/nigeria/wp-json/geodir/v2/markers/?" +
-    "gd-ajax=1&post_type=gd_ems&country=nigeria&region=borno-state" +
-    "&term[]=7&term[]=8&term[]=6&term[]=9";
+/**
+ * Fetches marker data from Beekeys GeoDirectory API.
+ * @param {Object} options
+ * @param {string} options.region - Region slug (e.g. 'borno-state')
+ * @param {string[]} [options.terms] - Array of term IDs for filtering
+ * @param {string} [options.postType='gd_ems'] - Post type to fetch
+ * @returns {Promise<Array>} - Array of formatted marker objects
+ */
+const fetchRegionData = async ({
+  region = "borno-state",
+  terms = ["7", "8", "6", "9"],
+  postType = "gd_ems",
+} = {}) => {
+  const baseUrl = "https://app.beekeys.com/nigeria/wp-json/geodir/v2/markers/";
+  const query = new URLSearchParams({
+    "gd-ajax": "1",
+    post_type: postType,
+    country: "nigeria",
+    region,
+  });
+
+  terms.forEach((term) => query.append("term[]", term));
+
+  const url = `${baseUrl}?${query.toString()}`;
 
   const response = await fetch(url, {
     method: "GET",
     headers: {
-      "Accept": "application/json, text/javascript, */*; q=0.01",
+      Accept: "application/json, text/javascript, */*; q=0.01",
       "X-Requested-With": "XMLHttpRequest",
-      "Referer": "https://app.beekeys.com/nigeria/location/nigeria/borno-state/",
+      Referer: `https://app.beekeys.com/nigeria/location/nigeria/${region}/`,
       "User-Agent": "Mozilla/5.0",
-      "Cookie": process.env.BEEKEYS_COOKIE,
+      Cookie: process.env.BEEKEYS_COOKIE,
     },
   });
 
@@ -30,17 +49,14 @@ const fetchRegionData = async () => {
 
   const json = JSON.parse(raw);
 
-  // Optional: format the items
-  const formatted = json.items.map((item) => ({
+  return json.items.map((item) => ({
     id: item.m,
     title: item.t,
-    slug: item.s, 
+    slug: item.s,
     lat: parseFloat(item.lt),
     lng: parseFloat(item.ln),
     icon: json.icons[item.i]?.i ?? null,
   }));
-
-  return formatted;
 };
 
 module.exports = { fetchRegionData };
